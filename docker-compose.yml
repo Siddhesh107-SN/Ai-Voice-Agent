@@ -1,0 +1,35 @@
+# Local development stack: Postgres + the API, with auto-reload and migrations run on start.
+# NOT for production — see docker-compose.prod.yml and the "Deployment" section of the README
+# for why (multiple replicas racing on `alembic upgrade head`, no reload, etc).
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_calling
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 10
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/ai_calling
+      APP_ENV: development
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - ./app:/code/app
+      - ./alembic:/code/alembic
+volumes:
+  pgdata:
