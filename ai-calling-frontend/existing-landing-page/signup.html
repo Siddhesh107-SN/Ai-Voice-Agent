@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign Up — Talkaor AI Voice Agents</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="auth-body">
+
+  <!-- Fullscreen WebGL Soundwave Shader Background -->
+  <canvas id="shader-canvas"></canvas>
+
+  <div class="auth-page-container">
+    <!-- Brand Logo returning home -->
+    <a href="index.html" class="brand-logo auth-brand-logo">
+      <span class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="22"></line>
+          <line x1="8" y1="22" x2="16" y2="22"></line>
+        </svg>
+      </span>
+      <span class="brand-name">Talkaor</span>
+    </a>
+
+    <!-- Sign Up Glass Card -->
+    <div class="glass-card auth-card" style="max-width: 520px;">
+      <div class="auth-header">
+        <h1 class="auth-title">Create Your Talkaor Account</h1>
+        <p class="auth-subtitle">Start building your AI voice agent today.</p>
+      </div>
+
+      <form class="contact-form" id="signup-page-form" onsubmit="event.preventDefault(); document.getElementById('signup-status').innerText = 'Account creation preview only (frontend demo).';">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="signup-fullname">Full Name</label>
+            <input type="text" id="signup-fullname" placeholder="Alex Morgan" required />
+          </div>
+          <div class="form-group">
+            <label for="signup-bizname">Business Name</label>
+            <input type="text" id="signup-bizname" placeholder="Acme Dental Clinic" required />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="signup-email">Email</label>
+            <input type="email" id="signup-email" placeholder="alex@company.com" required />
+          </div>
+          <div class="form-group">
+            <label for="signup-phone">Phone Number</label>
+            <input type="tel" id="signup-phone" placeholder="+91 98765 43210" required />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="signup-pass">Password</label>
+            <input type="password" id="signup-pass" placeholder="••••••••" required />
+          </div>
+          <div class="form-group">
+            <label for="signup-confirm-pass">Confirm Password</label>
+            <input type="password" id="signup-confirm-pass" placeholder="••••••••" required />
+          </div>
+        </div>
+
+        <div class="checkbox-group" style="display: flex; align-items: flex-start; gap: 0.65rem; margin-top: 0.25rem;">
+          <input type="checkbox" id="signup-terms" required style="width: auto; margin-top: 0.25rem; accent-color: #10b981; cursor: pointer;" />
+          <label for="signup-terms" style="font-size: 0.825rem; color: rgba(255, 255, 255, 0.7); cursor: pointer; line-height: 1.4;">
+            I agree to the <a href="#" class="auth-link-subtle">Terms & Conditions</a> and <a href="#" class="auth-link-subtle">Privacy Policy</a>.
+          </label>
+        </div>
+
+        <button type="submit" class="liquid-button w-full" style="height: 3.15rem; margin-top: 0.75rem;">
+          <div class="liquid-glass-reflection"></div>
+          <div class="liquid-glass-backdrop"></div>
+          <span class="liquid-button-content">Create Account</span>
+        </button>
+
+        <div id="signup-status" style="text-align: center; font-size: 0.85rem; color: #10b981; min-height: 1.25rem;"></div>
+
+        <div class="auth-footer-nav">
+          Already have an account? <a href="login.html" class="auth-link-highlight">Log in</a>
+        </div>
+      </form>
+    </div>
+
+    <div class="auth-back-link">
+      <a href="index.html">← Back to Talkaor Home</a>
+    </div>
+  </div>
+
+  <!-- SVG Filter for Liquid Glass Refraction -->
+  <svg class="svg-filters" aria-hidden="true" focusable="false">
+    <defs>
+      <filter
+        id="container-glass"
+        x="0%"
+        y="0%"
+        width="100%"
+        height="100%"
+        color-interpolation-filters="sRGB"
+      >
+        <feTurbulence
+          type="fractalNoise"
+          baseFrequency="0.05 0.05"
+          numOctaves="1"
+          seed="1"
+          result="turbulence"
+        />
+        <feGaussianBlur in="turbulence" stdDeviation="2" result="blurredNoise" />
+        <feDisplacementMap
+          in="SourceGraphic"
+          in2="blurredNoise"
+          scale="70"
+          xChannelSelector="R"
+          yChannelSelector="B"
+          result="displaced"
+        />
+        <feGaussianBlur in="displaced" stdDeviation="4" result="finalBlur" />
+        <feComposite in="finalBlur" in2="finalBlur" operator="over" />
+      </filter>
+    </defs>
+  </svg>
+
+  <script src="script.js"></script>
+</body>
+</html>

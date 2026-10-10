@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login — Talkaor AI Voice Agents</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="auth-body">
+
+  <!-- Fullscreen WebGL Soundwave Shader Background -->
+  <canvas id="shader-canvas"></canvas>
+
+  <div class="auth-page-container">
+    <!-- Brand Logo returning home -->
+    <a href="index.html" class="brand-logo auth-brand-logo">
+      <span class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="22"></line>
+          <line x1="8" y1="22" x2="16" y2="22"></line>
+        </svg>
+      </span>
+      <span class="brand-name">Talkaor</span>
+    </a>
+
+    <!-- Login Glass Card -->
+    <div class="glass-card auth-card">
+      <div class="auth-header">
+        <h1 class="auth-title">Welcome Back</h1>
+        <p class="auth-subtitle">Log in to your Talkaor account.</p>
+      </div>
+
+      <form class="contact-form" id="login-page-form" onsubmit="event.preventDefault(); document.getElementById('login-status').innerText = 'Logging in... (Frontend preview only)';">
+        <div class="form-group">
+          <label for="login-email">Email</label>
+          <input type="email" id="login-email" placeholder="you@company.com" required />
+        </div>
+
+        <div class="form-group">
+          <div class="label-row" style="display: flex; justify-content: space-between; align-items: center;">
+            <label for="login-password">Password</label>
+            <a href="#" class="auth-link-subtle" onclick="alert('Password reset link will be sent to your email.'); return false;">Forgot your password?</a>
+          </div>
+          <input type="password" id="login-password" placeholder="••••••••" required />
+        </div>
+
+        <button type="submit" class="liquid-button w-full" style="height: 3.15rem; margin-top: 0.5rem;">
+          <div class="liquid-glass-reflection"></div>
+          <div class="liquid-glass-backdrop"></div>
+          <span class="liquid-button-content">Login</span>
+        </button>
+
+        <div id="login-status" style="text-align: center; font-size: 0.85rem; color: #10b981; min-height: 1.25rem;"></div>
+
+        <div class="auth-footer-nav">
+          Don't have an account? <a href="signup.html" class="auth-link-highlight">Sign Up</a>
+        </div>
+      </form>
+    </div>
+
+    <div class="auth-back-link">
+      <a href="index.html">← Back to Talkaor Home</a>
+    </div>
+  </div>
+
+  <!-- SVG Filter for Liquid Glass Refraction -->
+  <svg class="svg-filters" aria-hidden="true" focusable="false">
+    <defs>
+      <filter
+        id="container-glass"
+        x="0%"
+        y="0%"
+        width="100%"
+        height="100%"
+        color-interpolation-filters="sRGB"
+      >
+        <feTurbulence
+          type="fractalNoise"
+          baseFrequency="0.05 0.05"
+          numOctaves="1"
+          seed="1"
+          result="turbulence"
+        />
+        <feGaussianBlur in="turbulence" stdDeviation="2" result="blurredNoise" />
+        <feDisplacementMap
+          in="SourceGraphic"
+          in2="blurredNoise"
+          scale="70"
+          xChannelSelector="R"
+          yChannelSelector="B"
+          result="displaced"
+        />
+        <feGaussianBlur in="displaced" stdDeviation="4" result="finalBlur" />
+        <feComposite in="finalBlur" in2="finalBlur" operator="over" />
+      </filter>
+    </defs>
+  </svg>
+
+  <script src="script.js"></script>
+</body>
+</html>
