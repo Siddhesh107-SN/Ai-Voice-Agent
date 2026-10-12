@@ -1,0 +1,21 @@
+# Environment variables and private credentials
+.env
+.env.*
+!.env.example
+*.pem
+
+# Python caches and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local virtual environments
+venv/
+.venv/
+
+# Local database/runtime files
+*.db-journal
+*.db-wal
+*.db-shm
