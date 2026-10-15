@@ -19,3 +19,12 @@ venv/
 *.db-journal
 *.db-wal
 *.db-shm
+
+
+# cd /var/www/fastapi-backend
+
+# ~/.pyenv/versions/3.13.*/bin/python -m venv .venv
+
+# 8000 -> normal .com (nginx), configure port dns mappings to launch backend on api.domain and frontend on main domain (route 53)
+
+ # ssh -i "local-ssh.pem" ubuntu@ec2-13-211-10-125.ap-southeast-2.compute.amazonaws.com

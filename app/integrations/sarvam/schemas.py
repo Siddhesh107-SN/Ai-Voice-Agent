@@ -2,7 +2,7 @@
 contract — adjust here (and only here) once that's confirmed; nothing downstream depends
 on the wire shape directly."""
 from datetime import date, datetime, time
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -65,4 +65,54 @@ class SarvamWebhookEnvelope(BaseModel):
         if needs_appointment and self.event_type == "appointment_rescheduled":
             if self.appointment.new_date is None or self.appointment.new_time is None:
                 raise ValueError("'appointment.new_date'/'new_time' are required to reschedule")
+        return self
+
+
+class SarvamTranscriptItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    role: Literal["agent", "user"]
+    en_text: str
+
+
+class SarvamWebhookConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    url: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class SarvamOutboundPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    attempt_id: str = Field(min_length=1, max_length=255)
+    status: Literal["connected", "no_answer", "busy", "failed"]
+    channel_info: dict[str, Any] | None = None
+    duration: int | float | None = None
+    interaction_id: str | None = None
+    failure_reason: str | None = None
+    final_agent_variables: dict[str, Any] | None = None
+    webhook_config: SarvamWebhookConfig | None = None
+    interaction_transcript: list[SarvamTranscriptItem] | None = None
+
+
+class SarvamAppointmentRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
+
+    customer_phone: str
+    customer_name: str | None = None
+    appointment_id: int | None = None
+    appointment_date: date | None = None
+    appointment_time: time | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+    reason: str | None = Field(default=None, max_length=500)
+    new_date: date | None = None
+    new_time: time | None = None
+
+    @model_validator(mode="after")
+    def validate_times(self) -> "SarvamAppointmentRequest":
+        if self.appointment_time is not None:
+            self.appointment_time = self.appointment_time.replace(second=0, microsecond=0)
+        if self.new_time is not None:
+            self.new_time = self.new_time.replace(second=0, microsecond=0)
         return self

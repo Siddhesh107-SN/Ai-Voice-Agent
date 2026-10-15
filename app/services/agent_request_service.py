@@ -92,3 +92,16 @@ class AgentRequestService:
                                  appointment_time=appointment_time, notes=notes)
         return AppointmentService(self.db, self.tenant_id).create(
             data, actor=None, ip=None, source=ChangeSource.AI_AGENT)
+
+    def check_slot(self, *, customer_phone: str, appointment_date: date,
+                   appointment_time: time) -> bool:
+        try:
+            phone = normalize_phone(customer_phone)
+        except ValueError as exc:
+            raise UnprocessableError("Invalid customer phone number",
+                                     error_code="INVALID_PHONE") from exc
+        customer = self.customers.get_by_phone(phone)
+        if customer is not None:
+            return not self.appointments.has_active_at(
+                customer.id, appointment_date, appointment_time)
+        return True

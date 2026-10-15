@@ -585,7 +585,7 @@ def test_super_admin_per_client_summary_matches_that_clients_own_view(client, db
 
 # ---------------- structural guards (fail when a future stage forgets isolation) ----------------
 # Tables whose client_id may be NULL by design (SUPER_ADMIN users, platform-level logs/events).
-NULLABLE_TENANT_TABLES = {"users", "audit_logs", "webhook_events"}
+NULLABLE_TENANT_TABLES = {"users", "audit_logs", "webhook_events", "call_attempts"}
 
 
 def test_every_table_has_client_id():
@@ -615,7 +615,12 @@ def _requires_auth(dependant) -> bool:
 
 # Webhooks authenticate via provider signature (see integrations/sarvam/webhook.py), not JWT.
 PUBLIC_ROUTES = {"/api/v1/health", "/api/v1/auth/register", "/api/v1/auth/login",
-                 "/api/v1/auth/refresh", "/api/v1/webhooks/sarvam"}
+                 "/api/v1/auth/refresh", "/api/v1/webhooks/sarvam",
+                 "/api/v1/webhooks/sarvam/{token}/outbound",
+                 "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/check-slot",
+                 "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/book",
+                 "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/reschedule",
+                 "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/cancel"}
 
 
 def test_every_api_route_requires_authentication_unless_allowlisted():

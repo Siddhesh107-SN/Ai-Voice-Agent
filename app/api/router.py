@@ -2,7 +2,7 @@
 from fastapi import APIRouter
 
 from app.api.routes import agents, appointments, auth, calls, cancellations, clients, customers, dashboard, health, \
-    users, webhooks
+    sarvam_webhooks, users, webhooks
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router, tags=["health"])
@@ -15,4 +15,5 @@ api_router.include_router(cancellations.router, prefix="/cancellations", tags=["
 api_router.include_router(calls.router, prefix="/calls", tags=["calls"])
 api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
 api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
+api_router.include_router(sarvam_webhooks.router, prefix="/webhooks", tags=["webhooks"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
