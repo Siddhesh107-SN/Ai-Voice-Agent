@@ -1,0 +1,59 @@
+/* ==========================================================
+   talkaor design tokens: the ONLY file that holds colour values.
+   Change the three base colours and everything else follows.
+   ========================================================== */
+:root {
+  /* base palette (candidate, may still change) */
+  --c-offwhite: #F5E4D0;
+  --c-blue: #285CCC;
+  --c-navy: #0F1F4A;
+
+  /* derived from the base palette */
+  --c-ink-soft: color-mix(in srgb, var(--c-navy) 72%, var(--c-offwhite));
+  --c-line: color-mix(in srgb, var(--c-navy) 14%, transparent);
+  --c-surface: color-mix(in srgb, var(--c-offwhite) 55%, white);
+  --c-surface-2: color-mix(in srgb, var(--c-offwhite) 80%, var(--c-blue) 6%);
+  --c-blue-soft: color-mix(in srgb, var(--c-blue) 14%, var(--c-offwhite));
+  --c-blue-tint: color-mix(in srgb, var(--c-blue) 8%, transparent);
+  --c-shadow: color-mix(in srgb, var(--c-navy) 14%, transparent);
+  --c-on-dark: var(--c-offwhite);
+  --c-on-dark-soft: color-mix(in srgb, var(--c-offwhite) 74%, var(--c-navy));
+  --c-error: color-mix(in srgb, var(--c-navy) 60%, #8a1c1c);
+
+  /* auth tokens */
+  --c-royal: #191970;
+  --c-orange: #E8641F;
+  --c-auth-bg: #07071F;
+  --c-auth-panel: #0B0B2B;
+  --c-auth-ink: #F4F4FF;
+  --c-auth-muted: rgba(232, 236, 255, 0.62);
+  --c-auth-line: rgba(255, 255, 255, 0.13);
+  --c-auth-field-bg: rgba(255, 255, 255, 0.05);
+  --c-auth-pill-bg: rgba(255, 255, 255, 0.08);
+  --c-auth-pill-line: rgba(255, 255, 255, 0.18);
+  --c-auth-error: #FF9A8B;
+  --c-auth-glow: rgba(232, 100, 31, 0.22);
+
+  /* gradients (soft, never flat) */
+  --grad-page:
+    radial-gradient(60% 50% at 12% 0%, color-mix(in srgb, var(--c-blue) 16%, transparent), transparent 70%),
+    radial-gradient(50% 40% at 92% 18%, color-mix(in srgb, var(--c-offwhite) 40%, white), transparent 70%),
+    linear-gradient(180deg, var(--c-offwhite), color-mix(in srgb, var(--c-offwhite) 88%, var(--c-blue)));
+  --grad-soft:
+    radial-gradient(55% 60% at 80% 10%, color-mix(in srgb, var(--c-blue) 13%, transparent), transparent 70%),
+    linear-gradient(180deg, color-mix(in srgb, var(--c-offwhite) 92%, white), var(--c-offwhite));
+  --grad-warm:
+    radial-gradient(60% 60% at 15% 90%, color-mix(in srgb, var(--c-blue) 12%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--c-offwhite), color-mix(in srgb, var(--c-offwhite) 82%, white));
+  --grad-dark:
+    radial-gradient(70% 70% at 80% 0%, color-mix(in srgb, var(--c-blue) 60%, transparent), transparent 70%),
+    linear-gradient(160deg, var(--c-navy), color-mix(in srgb, var(--c-navy) 70%, var(--c-blue)));
+  --grad-brand: linear-gradient(135deg, var(--c-blue), color-mix(in srgb, var(--c-blue) 70%, var(--c-navy)));
+
+  /* radii, spacing, motion */
+  --r-sm: 10px;
+  --r-md: 18px;
+  --r-lg: 28px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --nav-h: 68px;
+}

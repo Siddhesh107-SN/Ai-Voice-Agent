@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const backendInternalUrl = process.env.BACKEND_INTERNAL_URL || 'http://127.0.0.1:8001';
+
 const nextConfig = {
   reactStrictMode: true,
   images: {
@@ -16,26 +18,8 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/',
-        destination: '/landing.html',
-      },
-      {
-        source: '/api/:path*',
-        destination: `${process.env.BACKEND_INTERNAL_URL || 'http://127.0.0.1:8000'}/api/:path*`,
-      },
-    ];
-  },
-  async redirects() {
-    return [
-      {
-        source: '/login.html',
-        destination: '/login',
-        permanent: false,
-      },
-      {
-        source: '/signup.html',
-        destination: '/login',
-        permanent: false,
+        source: '/api/v1/:path*',
+        destination: `${backendInternalUrl}/api/v1/:path*`,
       },
     ];
   },

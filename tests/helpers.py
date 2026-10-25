@@ -5,19 +5,51 @@ from fastapi.testclient import TestClient
 PASSWORD = "Sup3rSecret1"
 
 
-def register(client: TestClient, email: str, business: str = "Biz", password: str = PASSWORD):
-    return client.post("/api/v1/auth/register", json={
-        "business_name": business, "name": "Owner", "email": email, "password": password})
+def register(client: TestClient, email: str, business: str = "Biz", password: str = PASSWORD,
+             phone: str | None = None, country_code: str | None = None):
+    body = {"business_name": business, "name": "Owner", "email": email, "password": password}
+    if phone:
+        body["phone"] = phone
+    if country_code:
+        body["country_code"] = country_code
+    return client.post("/api/v1/auth/register", json=body)
 
 
-def register_ok(client: TestClient, email: str, business: str = "Biz") -> dict:
+def register_ok(client: TestClient, email: str, business: str = "Biz", active: bool = True) -> dict:
     resp = register(client, email, business)
     assert resp.status_code == 201, resp.text
-    return resp.json()["data"]
+    data = resp.json()["data"]
+    if active and data.get("user") and data["user"].get("client_id"):
+        from app.core.database import SessionLocal
+        from app.models.client import Client
+        from app.models.enums import AccessStatus, OnboardingStage
+        from app.services.billing_service import BillingService
+        from app.services.business_service import BusinessService
+        with SessionLocal() as db:
+            c = db.get(Client, data["user"]["client_id"])
+            if c:
+                c.access_status = AccessStatus.ACTIVE
+                c.onboarding_stage = OnboardingStage.SETUP_COMPLETE
+                BillingService(db).get_or_create_default_subscription(c.id)
+                BusinessService(db)._ensure_default_hours(c.id)
+                db.commit()
+    return data
 
 
 def auth_headers(access_token: str) -> dict:
     return {"Authorization": f"Bearer {access_token}"}
+
+
+def elevated_headers(access_token: str, elevation_token: str) -> dict:
+    return {
+        "Authorization": f"Bearer {access_token}",
+        "X-Admin-Session": elevation_token,
+    }
+
+
+def make_elevation_token(user_id: int, client_id: int) -> str:
+    from app.core.security import create_elevation_token
+    return create_elevation_token(user_id, client_id)
 
 
 def make_user(db, client_id, role, email, password: str = PASSWORD):

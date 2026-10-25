@@ -21,6 +21,8 @@ class AuditLog(Base):
     entity_id: Mapped[str | None] = mapped_column(String(64))
     details: Mapped[dict | None] = mapped_column(JsonType)
     ip_address: Mapped[str | None] = mapped_column(String(64))
+    level: Mapped[str | None] = mapped_column(String(16), default="info", server_default="info", nullable=True)
+    message: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

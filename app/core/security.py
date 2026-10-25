@@ -28,6 +28,7 @@ class TokenPayload:
     client_id: int | None
     role: UserRole
     token_type: TokenType
+    jti: str | None = None
 
 
 def hash_password(password: str) -> str:
@@ -46,7 +47,8 @@ def password_needs_rehash(password_hash: str) -> bool:
 
 
 def _create_token(user_id: int, client_id: int | None, role: UserRole,
-                  token_type: TokenType, expires_delta: timedelta) -> str:
+                  token_type: TokenType, expires_delta: timedelta,
+                  jti: str | None = None) -> str:
     settings = get_settings()
     now = datetime.now(timezone.utc)
     claims = {
@@ -56,7 +58,7 @@ def _create_token(user_id: int, client_id: int | None, role: UserRole,
         "type": token_type.value,
         "iat": now,
         "exp": now + expires_delta,
-        "jti": uuid.uuid4().hex,
+        "jti": jti or uuid.uuid4().hex,
     }
     return jwt.encode(claims, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
@@ -68,9 +70,27 @@ def create_access_token(user_id: int, client_id: int | None, role: UserRole,
 
 
 def create_refresh_token(user_id: int, client_id: int | None, role: UserRole,
-                         expires_delta: timedelta | None = None) -> str:
+                         expires_delta: timedelta | None = None,
+                         jti: str | None = None) -> str:
     delta = expires_delta or timedelta(days=get_settings().refresh_token_expire_days)
-    return _create_token(user_id, client_id, role, TokenType.REFRESH, delta)
+    return _create_token(user_id, client_id, role, TokenType.REFRESH, delta, jti=jti)
+
+
+def create_elevation_token(user_id: int, client_id: int,
+                           expires_delta: timedelta | None = None) -> str:
+    """Issue a 15-minute elevation token for client_staff PIN elevation."""
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    delta = expires_delta or timedelta(seconds=900)
+    claims = {
+        "sub": str(user_id),
+        "client_id": client_id,
+        "elev": True,
+        "iat": now,
+        "exp": now + delta,
+        "jti": uuid.uuid4().hex,
+    }
+    return jwt.encode(claims, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
 def decode_token(token: str, expected_type: TokenType) -> TokenPayload:
@@ -92,6 +112,7 @@ def decode_token(token: str, expected_type: TokenType) -> TokenPayload:
             client_id=claims.get("client_id"),
             role=UserRole(claims["role"]),
             token_type=expected_type,
+            jti=claims.get("jti"),
         )
     except (KeyError, ValueError, TypeError) as exc:
         raise InvalidTokenError() from exc

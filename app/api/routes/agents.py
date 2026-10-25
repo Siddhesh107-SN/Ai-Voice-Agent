@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query, Request, status
 
-from app.core.dependencies import ClientAdminUser, ClientMemberUser, DbSession, TenantId
+from app.core.dependencies import (ClientAdminOrElevated, ClientAdminUser,
+                                   ClientMemberUser, DbSession, TenantId)
 from app.models.enums import AgentStatus
 from app.schemas.agent import AgentCreate, AgentOut, AgentUpdate
 from app.schemas.common import ApiResponse, PaginatedResponse
@@ -24,7 +25,7 @@ def list_agents(_: ClientMemberUser, tenant_id: TenantId, db: DbSession, page: P
 
 
 @router.post("", response_model=ApiResponse[AgentOut], status_code=status.HTTP_201_CREATED)
-def create_agent(request: Request, body: AgentCreate, actor: ClientAdminUser, tenant_id: TenantId,
+def create_agent(request: Request, body: AgentCreate, actor: ClientAdminOrElevated, tenant_id: TenantId,
                  db: DbSession):
     agent = AgentService(db, tenant_id).create(body, actor, _ip(request))
     return ApiResponse(message="Agent created successfully", data=AgentOut.model_validate(agent))
@@ -37,7 +38,7 @@ def get_agent(agent_id: int, _: ClientMemberUser, tenant_id: TenantId, db: DbSes
 
 
 @router.patch("/{agent_id}", response_model=ApiResponse[AgentOut])
-def update_agent(request: Request, agent_id: int, body: AgentUpdate, actor: ClientAdminUser,
+def update_agent(request: Request, agent_id: int, body: AgentUpdate, actor: ClientAdminOrElevated,
                  tenant_id: TenantId, db: DbSession):
     agent = AgentService(db, tenant_id).update(agent_id, body, actor, _ip(request))
     return ApiResponse(message="Agent updated successfully", data=AgentOut.model_validate(agent))

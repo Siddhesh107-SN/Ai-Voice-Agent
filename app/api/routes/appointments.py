@@ -2,10 +2,12 @@ from datetime import date
 
 from fastapi import APIRouter, Query, Request, status
 
-from app.core.dependencies import ClientAdminUser, ClientMemberUser, DbSession, TenantId
+from app.core.dependencies import (ClientAdminOrElevated, ClientAdminUser,
+                                   ClientMemberUser, DbSession, TenantId)
 from app.models.enums import AppointmentStatus
-from app.schemas.appointment import (AppointmentCreate, AppointmentHistoryOut, AppointmentOut,
-                                     AppointmentUpdate, CancelRequest, RescheduleRequest)
+from app.schemas.appointment import (AppointmentCreate, AppointmentHistoryOut,
+                                     AppointmentOut, AppointmentUpdate,
+                                     CancelRequest, RescheduleRequest)
 from app.schemas.common import ApiResponse, PaginatedResponse
 from app.services.appointment_service import AppointmentService
 from app.services.cancellation_service import CancellationService
@@ -34,7 +36,7 @@ def list_appointments(
 
 
 @router.post("", response_model=ApiResponse[AppointmentOut], status_code=status.HTTP_201_CREATED)
-def create_appointment(request: Request, body: AppointmentCreate, actor: ClientMemberUser,
+def create_appointment(request: Request, body: AppointmentCreate, actor: ClientAdminOrElevated,
                        tenant_id: TenantId, db: DbSession):
     appointment = AppointmentService(db, tenant_id).create(body, actor, _ip(request))
     return ApiResponse(message="Appointment created successfully",
@@ -50,7 +52,7 @@ def get_appointment(appointment_id: int, _: ClientMemberUser, tenant_id: TenantI
 
 @router.patch("/{appointment_id}", response_model=ApiResponse[AppointmentOut])
 def update_appointment(request: Request, appointment_id: int, body: AppointmentUpdate,
-                       actor: ClientMemberUser, tenant_id: TenantId, db: DbSession):
+                       actor: ClientAdminOrElevated, tenant_id: TenantId, db: DbSession):
     appointment = AppointmentService(db, tenant_id).update(appointment_id, body, actor, _ip(request))
     return ApiResponse(message="Appointment updated successfully",
                        data=AppointmentOut.model_validate(appointment))
@@ -72,7 +74,7 @@ def appointment_history(appointment_id: int, _: ClientMemberUser, tenant_id: Ten
 
 
 @router.post("/{appointment_id}/cancel", response_model=ApiResponse[AppointmentOut])
-def cancel_appointment(request: Request, appointment_id: int, actor: ClientMemberUser,
+def cancel_appointment(request: Request, appointment_id: int, actor: ClientAdminOrElevated,
                        tenant_id: TenantId, db: DbSession, body: CancelRequest | None = None):
     reason = body.reason if body else None
     appointment = CancellationService(db, tenant_id).cancel(
@@ -83,7 +85,7 @@ def cancel_appointment(request: Request, appointment_id: int, actor: ClientMembe
 
 @router.post("/{appointment_id}/reschedule", response_model=ApiResponse[AppointmentOut])
 def reschedule_appointment(request: Request, appointment_id: int, body: RescheduleRequest,
-                           actor: ClientMemberUser, tenant_id: TenantId, db: DbSession):
+                           actor: ClientAdminOrElevated, tenant_id: TenantId, db: DbSession):
     appointment = RescheduleService(db, tenant_id).reschedule(
         appointment_id, body.new_date, body.new_time, body.reason, actor=actor, ip=_ip(request))
     return ApiResponse(message="Appointment rescheduled successfully",

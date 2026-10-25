@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
 
+    pin_encryption_key: str = ""
+
     sarvam_api_key: str = ""
     sarvam_base_url: str = ""
     sarvam_webhook_secret: str = ""
@@ -27,11 +29,25 @@ class Settings(BaseSettings):
     cors_origins: str = ""
     rate_limit_enabled: bool = True
 
+    upload_dir: str = "uploads"
+
+    email_backend: str = "console"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    email_from: str = "noreply@talkaor.com"
+    require_email_verification: bool = True
+    docs_enabled: bool = False
+
+
     @model_validator(mode="after")
     def _check_production_secrets(self) -> "Settings":
         if self.app_env == "production":
             if self.jwt_secret_key.startswith("change-me") or len(self.jwt_secret_key) < 32:
                 raise ValueError("JWT_SECRET_KEY must be a strong secret (32+ chars) in production")
+            if not self.pin_encryption_key:
+                raise ValueError("PIN_ENCRYPTION_KEY must be configured in production")
         return self
 
     @property

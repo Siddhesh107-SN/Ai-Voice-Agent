@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.models.enums import ClientStatus
+from app.models.enums import AccessStatus, ClientStatus, OnboardingStage
 from app.utils.validators import validate_password_strength, validate_timezone
 
 
@@ -13,9 +13,12 @@ class ClientOut(BaseModel):
     business_name: str
     email: str
     phone: str | None
+    country_code: str | None = None
     address: str | None
     timezone: str
     status: ClientStatus
+    access_status: AccessStatus = AccessStatus.PENDING_PAYMENT
+    onboarding_stage: OnboardingStage | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -42,6 +45,7 @@ class ClientCreate(BaseModel):
     business_name: str = Field(min_length=2, max_length=200)
     email: EmailStr
     phone: str | None = Field(default=None, max_length=32)
+    country_code: str | None = Field(default=None, max_length=16)
     address: str | None = Field(default=None, max_length=1000)
     timezone: str | None = None
     admin: ClientAdminInit
@@ -62,6 +66,7 @@ class ClientProfileUpdate(BaseModel):
 
     business_name: str | None = Field(default=None, min_length=2, max_length=200)
     phone: str | None = Field(default=None, max_length=32)
+    country_code: str | None = Field(default=None, max_length=16)
     address: str | None = Field(default=None, max_length=1000)
     timezone: str | None = None
 

@@ -12,6 +12,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     phone: str | None = Field(default=None, max_length=32)
+    country_code: str | None = Field(default=None, max_length=16)
     timezone: str | None = None
 
     @field_validator("timezone")
@@ -41,6 +42,10 @@ class LoginRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class LogoutRequest(BaseModel):
     refresh_token: str
 
 

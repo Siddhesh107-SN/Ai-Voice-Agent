@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" width="100%" height="100%">
+  <defs>
+    <linearGradient id="qrGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#285CCC" />
+      <stop offset="100%" stop-color="#191970" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.15" />
+    </filter>
+  </defs>
+
+  <!-- Background Card -->
+  <rect x="0" y="0" width="320" height="320" rx="24" fill="#FFFFFF" />
+
+  <!-- Top-Left Finder Pattern -->
+  <rect x="24" y="24" width="68" height="68" rx="12" fill="#0F1F4A" />
+  <rect x="34" y="34" width="48" height="48" rx="8" fill="#FFFFFF" />
+  <rect x="44" y="44" width="28" height="28" rx="6" fill="#E8641F" />
+
+  <!-- Top-Right Finder Pattern -->
+  <rect x="228" y="24" width="68" height="68" rx="12" fill="#0F1F4A" />
+  <rect x="238" y="34" width="48" height="48" rx="8" fill="#FFFFFF" />
+  <rect x="248" y="44" width="28" height="28" rx="6" fill="#E8641F" />
+
+  <!-- Bottom-Left Finder Pattern -->
+  <rect x="24" y="228" width="68" height="68" rx="12" fill="#0F1F4A" />
+  <rect x="34" y="238" width="48" height="48" rx="8" fill="#FFFFFF" />
+  <rect x="44" y="248" width="28" height="28" rx="6" fill="#E8641F" />
+
+  <!-- Decorative Non-Scannable Modules / Pixel Blocks -->
+  <g fill="#285CCC" opacity="0.85">
+    <!-- Top row bits -->
+    <rect x="108" y="26" width="14" height="14" rx="4" />
+    <rect x="132" y="26" width="14" height="14" rx="4" />
+    <rect x="174" y="26" width="14" height="14" rx="4" />
+    <rect x="198" y="26" width="14" height="14" rx="4" />
+
+    <rect x="108" y="50" width="14" height="14" rx="4" />
+    <rect x="150" y="50" width="14" height="14" rx="4" fill="#E8641F" />
+    <rect x="174" y="50" width="14" height="14" rx="4" />
+
+    <rect x="132" y="74" width="14" height="14" rx="4" />
+    <rect x="156" y="74" width="14" height="14" rx="4" />
+    <rect x="198" y="74" width="14" height="14" rx="4" />
+
+    <!-- Left side bits -->
+    <rect x="26" y="108" width="14" height="14" rx="4" />
+    <rect x="50" y="108" width="14" height="14" rx="4" />
+    <rect x="74" y="108" width="14" height="14" rx="4" />
+    <rect x="26" y="132" width="14" height="14" rx="4" />
+    <rect x="74" y="132" width="14" height="14" rx="4" fill="#E8641F" />
+    <rect x="50" y="156" width="14" height="14" rx="4" />
+    <rect x="26" y="180" width="14" height="14" rx="4" />
+    <rect x="74" y="180" width="14" height="14" rx="4" />
+
+    <!-- Right side bits -->
+    <rect x="232" y="108" width="14" height="14" rx="4" />
+    <rect x="280" y="108" width="14" height="14" rx="4" />
+    <rect x="256" y="132" width="14" height="14" rx="4" fill="#E8641F" />
+    <rect x="232" y="156" width="14" height="14" rx="4" />
+    <rect x="280" y="156" width="14" height="14" rx="4" />
+    <rect x="256" y="180" width="14" height="14" rx="4" />
+
+    <!-- Bottom row bits -->
+    <rect x="108" y="232" width="14" height="14" rx="4" />
+    <rect x="156" y="232" width="14" height="14" rx="4" />
+    <rect x="198" y="232" width="14" height="14" rx="4" />
+    <rect x="132" y="256" width="14" height="14" rx="4" fill="#E8641F" />
+    <rect x="174" y="256" width="14" height="14" rx="4" />
+    <rect x="240" y="256" width="14" height="14" rx="4" />
+    <rect x="274" y="256" width="14" height="14" rx="4" />
+    <rect x="108" y="280" width="14" height="14" rx="4" />
+    <rect x="156" y="280" width="14" height="14" rx="4" />
+    <rect x="204" y="280" width="14" height="14" rx="4" />
+    <rect x="246" y="280" width="14" height="14" rx="4" />
+  </g>
+
+  <!-- Big Playful Center Smiley / Bot Face -->
+  <g filter="url(#shadow)">
+    <circle cx="160" cy="160" r="46" fill="#0F1F4A" />
+    <circle cx="160" cy="160" r="41" fill="#E8641F" />
+    <!-- Happy eyes -->
+    <circle cx="146" cy="150" r="5" fill="#FFFFFF" />
+    <circle cx="174" cy="150" r="5" fill="#FFFFFF" />
+    <!-- Big joyful smile -->
+    <path d="M 142 166 Q 160 188 178 166" fill="none" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round" />
+    <!-- Rosy cheeks -->
+    <circle cx="138" cy="162" r="3.5" fill="#FFB088" opacity="0.8" />
+    <circle cx="182" cy="162" r="3.5" fill="#FFB088" opacity="0.8" />
+  </g>
+</svg>
