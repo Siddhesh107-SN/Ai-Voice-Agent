@@ -120,4 +120,4 @@ def _log_rejected(request, status, code, detail, body=None):
         return
     import re
     path = re.sub(r"(/sarvam/)[^/]+", r"\1<token>", request.url.path)
-    logger.warning("422 %s code=%s detail=%s body=%s", path, code, detail, body if "/webhooks/" in path else None)
+    logger.warning("422 %s code=%s detail=%s body=%s", path, code, detail, None)
