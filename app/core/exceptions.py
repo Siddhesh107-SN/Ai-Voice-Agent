@@ -75,17 +75,19 @@ def _error_body(message: str, error_code: str, errors: list | None = None) -> di
     return body
 
 
-async def _app_error(_: Request, exc: AppError) -> JSONResponse:
+async def _app_error(request: Request, exc: AppError) -> JSONResponse:
+    _log_rejected(request, exc.status_code, exc.error_code, exc.message)
     return JSONResponse(_error_body(exc.message, exc.error_code), exc.status_code,
                         headers=exc.headers)
 
 
-async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
     # Only field + message are returned: never echo submitted values (may hold passwords).
     errors = [
         {"field": ".".join(str(p) for p in e["loc"] if p != "body"), "message": e["msg"]}
         for e in exc.errors()
     ]
+    _log_rejected(request, 422, "VALIDATION_ERROR", errors, getattr(exc, "body", None))
     return JSONResponse(_error_body("Validation failed", "VALIDATION_ERROR", errors), 422)
 
 
@@ -111,3 +113,11 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, _http_error)
     app.add_exception_handler(RateLimitExceeded, _rate_limited)
     app.add_exception_handler(Exception, _unhandled)
+
+
+def _log_rejected(request, status, code, detail, body=None):
+    if status != 422:
+        return
+    import re
+    path = re.sub(r"(/sarvam/)[^/]+", r"\1<token>", request.url.path)
+    logger.warning("422 %s code=%s detail=%s body=%s", path, code, detail, body if "/webhooks/" in path else None)

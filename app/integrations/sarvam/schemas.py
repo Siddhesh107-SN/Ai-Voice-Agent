@@ -4,7 +4,7 @@ on the wire shape directly."""
 from datetime import date, datetime, time
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SarvamEventType = Literal[
     "call_started", "call_completed", "appointment_created",
@@ -108,6 +108,15 @@ class SarvamAppointmentRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
     new_date: date | None = None
     new_time: time | None = None
+
+    @field_validator(
+        "customer_name", "appointment_id", "appointment_date", "appointment_time",
+        "notes", "reason", "new_date", "new_time", mode="before")
+    @classmethod
+    def _blank_to_none(cls, value):
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @model_validator(mode="after")
     def validate_times(self) -> "SarvamAppointmentRequest":
