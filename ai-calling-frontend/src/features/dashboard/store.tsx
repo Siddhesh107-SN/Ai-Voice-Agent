@@ -2,12 +2,29 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import type { LogLevel, MockData, Role } from './types';
-import { MOCK } from './mock';
 import { nowLabel, TODAY } from './util';
 import { fetchInitialDashboardData, verifyStaffPin, changeStaffPin } from './api';
 import { logoutUser } from '@/lib/http';
+import { AUTH_CHANNEL, AUTH_LOGOUT_KEY } from '@/lib/auth-channel';
 
 export type Theme = 'dark' | 'light';
+
+function emptyDashboardData(): MockData {
+  return {
+    appts: [],
+    history: {},
+    agents: [],
+    calls: [],
+    staff: [],
+    services: [],
+    hours: [],
+    businesses: [],
+    requests: [],
+    messages: [],
+    logs: [],
+  };
+}
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -69,7 +86,7 @@ export function DashboardProvider({
 }) {
   const router = useRouter();
   const [s, setS] = useState<State>(() => ({
-    ...structuredClone(MOCK),
+    ...emptyDashboardData(),
     theme: 'dark',
     role: initialRole,
     elevated: false,
@@ -137,27 +154,45 @@ export function DashboardProvider({
     setModal(null);
     setS((prev) => ({
       ...prev,
-      ...structuredClone(MOCK),
+      ...emptyDashboardData(),
       elevated: false,
       user: undefined,
-      logs: [{ at: nowLabel(), text: 'signed out', level: 'info' }, ...structuredClone(MOCK.logs)],
+      logs: [{ at: nowLabel(), text: 'signed out', level: 'info' }],
     }));
 
-    await logoutUser();
+    await logoutUser(broadcast);
   }, []);
 
   useEffect(() => {
     if (typeof BroadcastChannel !== 'undefined') {
       try {
-        channelRef.current = new BroadcastChannel('tk_auth_channel');
+        channelRef.current = new BroadcastChannel(AUTH_CHANNEL);
         channelRef.current.onmessage = (event: MessageEvent<{ type?: string; reason?: 'manual' | 'expired' }>) => {
-          if (event.data?.type === 'LOGOUT') void logout('manual', false);
+          if (event.data?.type === 'logout') void logout('manual', false);
         };
       } catch {
         channelRef.current = null;
       }
     }
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== AUTH_LOGOUT_KEY || !event.newValue) return;
+      try {
+        const message: unknown = JSON.parse(event.newValue);
+        if (
+          typeof message === 'object' &&
+          message !== null &&
+          'type' in message &&
+          message.type === 'logout'
+        ) {
+          void logout('manual', false);
+        }
+      } catch {
+        // Ignore malformed cross-tab logout messages.
+      }
+    };
+    window.addEventListener('storage', handleStorage);
     return () => {
+      window.removeEventListener('storage', handleStorage);
       channelRef.current?.close();
       channelRef.current = null;
     };

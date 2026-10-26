@@ -10,7 +10,6 @@ import type {
   MockData,
   Plan,
 } from './types';
-import { MOCK } from './mock';
 import { http, setElevationToken, getUserRole } from '@/lib/http';
 
 export function isMockMode(): boolean {
@@ -21,6 +20,13 @@ export function isMockMode(): boolean {
     return true;
   }
   return false;
+}
+
+async function loadMockData(): Promise<MockData> {
+  if (!isMockMode()) {
+    throw new Error('Mock data cannot be loaded outside mock mode.');
+  }
+  return (await import('./mock')).MOCK;
 }
 
 // ---------------- ADAPTERS ----------------
@@ -125,7 +131,7 @@ function adaptBusiness(b: any): Business {
     status: b.status === 'Suspended' ? 'Suspended' : 'Active',
     renews_on: renewsOn,
     last_login: lastLogin,
-    staff_pin: b.has_pin ? '••••' : (b.staff_pin || ''),
+    staff_pin: b.has_pin ? '••••' : '',
   };
 }
 
@@ -157,7 +163,7 @@ function adaptHistoryItem(b: any): AppointmentHistoryItem {
 
 export async function fetchInitialDashboardData(): Promise<MockData> {
   if (isMockMode()) {
-    return structuredClone(MOCK);
+    return structuredClone(await loadMockData());
   }
 
   const role = getUserRole();
@@ -283,6 +289,7 @@ export async function createAppointment(payload: Partial<Appointment> & { actor?
 
 export async function updateAppointment(id: string, payload: Partial<Appointment> & { actor?: string }): Promise<Appointment> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     const existing = MOCK.appts.find((a) => a.id === id);
     return { ...(existing || MOCK.appts[0]), ...payload } as Appointment;
   }
@@ -304,6 +311,7 @@ export async function rescheduleAppointment(
   payload: { date: string; time: string; reason?: string; actor?: string }
 ): Promise<Appointment> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     const existing = MOCK.appts.find((a) => a.id === id);
     return { ...(existing || MOCK.appts[0]), date: payload.date, time: payload.time } as Appointment;
   }
@@ -326,6 +334,7 @@ export async function cancelAppointment(
   payload: { reason?: string; source?: 'ai_agent' | 'staff'; actor?: string }
 ): Promise<Appointment> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     const existing = MOCK.appts.find((a) => a.id === id);
     return { ...(existing || MOCK.appts[0]), status: 'cancelled', cancel_reason: payload.reason } as Appointment;
   }
@@ -343,6 +352,7 @@ export async function cancelAppointment(
 
 export async function fetchAppointmentHistory(id: string): Promise<AppointmentHistoryItem[]> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     return MOCK.history[id] || [];
   }
 
@@ -354,6 +364,7 @@ export async function fetchAppointmentHistory(id: string): Promise<AppointmentHi
 
 export async function fetchCalls(): Promise<Call[]> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     return MOCK.calls;
   }
   const res = await http<any[]>('/api/v1/calls');
@@ -362,6 +373,7 @@ export async function fetchCalls(): Promise<Call[]> {
 
 export async function fetchAgents(): Promise<Agent[]> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     return MOCK.agents;
   }
   const role = getUserRole();
@@ -372,6 +384,7 @@ export async function fetchAgents(): Promise<Agent[]> {
 
 export async function toggleAgentPower(id: string, online?: boolean, actor?: string): Promise<Agent> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     const agent = MOCK.agents.find((a) => a.id === id) || MOCK.agents[0];
     return { ...agent, online: online ?? !agent.online };
   }
@@ -435,6 +448,7 @@ export async function updateBusinessSettings(payload: {
 
 export async function fetchAdminBusinesses(): Promise<Business[]> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     return MOCK.businesses;
   }
   const res = await http<any[]>('/api/v1/admin/businesses');
@@ -453,6 +467,7 @@ export async function updateBusinessStatus(id: string, status: 'Active' | 'Suspe
 
 export async function addMinutePack(id: string, minutes: number = 100, actor?: string): Promise<Business> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     const biz = MOCK.businesses.find((b) => b.id === id) || MOCK.businesses[0];
     return { ...biz, minutes_limit: biz.minutes_limit + minutes };
   }
@@ -465,6 +480,7 @@ export async function addMinutePack(id: string, minutes: number = 100, actor?: s
 
 export async function viewBusinessPin(id: string, actor?: string): Promise<{ pin: string; changedAt: string }> {
   if (isMockMode()) {
+    await loadMockData();
     return { pin: '4321', changedAt: new Date().toISOString() };
   }
   return http<{ pin: string; changedAt: string }>(`/api/v1/admin/businesses/${id}/pin-view`, {
@@ -475,7 +491,8 @@ export async function viewBusinessPin(id: string, actor?: string): Promise<{ pin
 
 export async function resetBusinessPin(id: string, actor?: string, pin?: string): Promise<{ pin: string }> {
   if (isMockMode()) {
-    return { pin: pin || '1234' };
+    await loadMockData();
+    return { pin: pin ?? '' };
   }
   return http<{ pin: string }>(`/api/v1/admin/businesses/${id}/pin-reset`, {
     method: 'POST',
@@ -485,6 +502,7 @@ export async function resetBusinessPin(id: string, actor?: string, pin?: string)
 
 export async function fetchAccessRequests(): Promise<AccessRequest[]> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     return MOCK.requests;
   }
   const res = await http<any[]>('/api/v1/admin/access-requests');
@@ -493,6 +511,7 @@ export async function fetchAccessRequests(): Promise<AccessRequest[]> {
 
 export async function approveAccess(id: string, actor?: string): Promise<Business> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     const biz = MOCK.businesses.find((b) => b.id === id) || MOCK.businesses[0];
     return { ...biz, status: 'Active' };
   }
@@ -515,6 +534,7 @@ export async function declineAccess(id: string, reason = 'Payment declined', act
 
 export async function fetchContactMessages(): Promise<ContactMessage[]> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     return MOCK.messages;
   }
   return http<ContactMessage[]>('/api/v1/admin/messages');
@@ -522,6 +542,7 @@ export async function fetchContactMessages(): Promise<ContactMessage[]> {
 
 export async function updateContactMessage(id: string, patch: Partial<ContactMessage>): Promise<ContactMessage> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     const msg = MOCK.messages.find((m) => m.id === id) || MOCK.messages[0];
     return { ...msg, ...patch };
   }
@@ -533,6 +554,7 @@ export async function updateContactMessage(id: string, patch: Partial<ContactMes
 
 export async function fetchLogs(): Promise<LogEntry[]> {
   if (isMockMode()) {
+    const MOCK = await loadMockData();
     return MOCK.logs;
   }
   return http<LogEntry[]>('/api/v1/admin/logs');
@@ -542,6 +564,7 @@ export async function fetchLogs(): Promise<LogEntry[]> {
 
 export async function verifyStaffPin(pin: string, businessId = 'b1'): Promise<{ ok: boolean; msg?: string }> {
   if (isMockMode()) {
+    await loadMockData();
     if (pin === '1234' || pin === '4321') return { ok: true };
     return { ok: false, msg: 'Invalid staff PIN.' };
   }
@@ -567,6 +590,7 @@ export async function changeStaffPin(
   businessId = 'b1'
 ): Promise<string | null> {
   if (isMockMode()) {
+    await loadMockData();
     if (newPin !== confirmPin) return 'PINs do not match.';
     return null;
   }
