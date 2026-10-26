@@ -8,6 +8,8 @@
  * - Clean session termination on refresh failure or logout
  */
 
+import { AUTH_CHANNEL, AUTH_LOGOUT_KEY } from './auth-channel';
+
 export type AppRole = 'admin' | 'staff' | 'super_admin';
 
 export class ApiError extends Error {
@@ -281,7 +283,7 @@ export async function http<T = any>(endpoint: string, options: RequestOptions = 
   return data as T;
 }
 
-export async function logoutUser(): Promise<void> {
+export async function logoutUser(broadcast = true): Promise<void> {
   const refreshToken = getRefreshToken();
   try {
     if (refreshToken) {
@@ -294,17 +296,18 @@ export async function logoutUser(): Promise<void> {
   } catch {
     // Ignore network failures on logout
   } finally {
-    // Broadcast logout across tabs
-    if (typeof BroadcastChannel !== 'undefined') {
+    if (broadcast) {
+      if (typeof BroadcastChannel !== 'undefined') {
+        try {
+          const bc = new BroadcastChannel(AUTH_CHANNEL);
+          bc.postMessage({ type: 'logout', reason: 'manual', at: Date.now() });
+          bc.close();
+        } catch {}
+      }
       try {
-        const bc = new BroadcastChannel('tk-auth');
-        bc.postMessage({ type: 'logout', reason: 'manual', at: Date.now() });
-        bc.close();
+        localStorage.setItem(AUTH_LOGOUT_KEY, JSON.stringify({ type: 'logout', at: Date.now() }));
       } catch {}
     }
-    try {
-      localStorage.setItem('tk-auth-logout', JSON.stringify({ type: 'logout', at: Date.now() }));
-    } catch {}
 
     clearAuth();
     if (typeof window !== 'undefined') {

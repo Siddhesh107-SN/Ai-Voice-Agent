@@ -114,7 +114,7 @@ export function AccessControl() {
 }
 
 function PinReveal({ id }: { id: string }) {
-  const { s, closeModal, actor } = useDash();
+  const { s, closeModal, actor, toast } = useDash();
   const b = s.businesses.find((x) => x.id === id)!;
   const [pinVal, setPinVal] = useState('••••');
   const [loading, setLoading] = useState(true);
@@ -126,10 +126,11 @@ function PinReveal({ id }: { id: string }) {
         setLoading(false);
       })
       .catch(() => {
-        setPinVal(b.staff_pin || '1234');
+        setPinVal('••••');
         setLoading(false);
+        toast('Unable to load staff PIN');
       });
-  }, [id, actor, b.staff_pin]);
+  }, [id, actor, toast]);
 
   return (
     <Dialog title={`Staff PIN: ${b.name}`} actions={<button onClick={closeModal}>Close</button>}>
