@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, ForeignKeyConstraint, Index, Text
+from sqlalchemy import Boolean, ForeignKey, ForeignKeyConstraint, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -17,12 +17,20 @@ class Enquiry(TimestampMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"), nullable=True)
     customer_id: Mapped[int | None] = mapped_column()
-    question: Mapped[str] = mapped_column(Text, nullable=False)
+    question: Mapped[str | None] = mapped_column(Text, nullable=True)
     response: Mapped[str | None] = mapped_column(Text)
     status: Mapped[EnquiryStatus] = mapped_column(
         str_enum(EnquiryStatus, "enquiry_status"), default=EnquiryStatus.OPEN, nullable=False
     )
+
+    # Public contact form & message fields
+    name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    handled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     customer = relationship("Customer", viewonly=True)

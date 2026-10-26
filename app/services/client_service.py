@@ -5,7 +5,7 @@ from app.core.config import get_settings
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.security import hash_password
 from app.models.client import Client
-from app.models.enums import ClientStatus, UserRole
+from app.models.enums import AccessStatus, ClientStatus, OnboardingStage, UserRole
 from app.models.user import User
 from app.repositories.client_repository import ClientRepository
 from app.repositories.user_repository import UserRepository
@@ -20,14 +20,21 @@ _EMAIL_TAKEN_CODE = "EMAIL_ALREADY_REGISTERED"
 
 def provision_client(db: Session, *, business_name: str, email: str, phone: str | None,
                      address: str | None, admin_name: str, admin_email: str,
-                     admin_password: str, timezone: str | None = None) -> tuple[Client, User]:
+                     admin_password: str, timezone: str | None = None,
+                     country_code: str | None = None,
+                     access_status: AccessStatus = AccessStatus.PENDING_PAYMENT,
+                     onboarding_stage: OnboardingStage | None = None) -> tuple[Client, User]:
     """Create a client and its first CLIENT_ADMIN (flushes; caller commits)."""
     clients, users = ClientRepository(db), UserRepository(db)
     if clients.get_by_email(email) or users.get_by_email(admin_email):
         raise ConflictError(_EMAIL_TAKEN, error_code=_EMAIL_TAKEN_CODE)
     client = clients.add(Client(
         business_name=business_name, email=email, phone=phone, address=address,
-        timezone=timezone or get_settings().default_timezone))
+        country_code=country_code,
+        timezone=timezone or get_settings().default_timezone,
+        access_status=access_status,
+        onboarding_stage=onboarding_stage,
+    ))
     admin = users.add(User(
         client_id=client.id, name=admin_name, email=admin_email,
         password_hash=hash_password(admin_password), role=UserRole.CLIENT_ADMIN))
@@ -43,8 +50,10 @@ class ClientService:
     def create(self, data: ClientCreate, actor: User, ip: str | None) -> Client:
         client, admin = provision_client(
             self.db, business_name=data.business_name, email=data.email, phone=data.phone,
-            address=data.address, timezone=data.timezone, admin_name=data.admin.name, admin_email=data.admin.email,
-            admin_password=data.admin.password)
+            country_code=data.country_code, address=data.address, timezone=data.timezone,
+            admin_name=data.admin.name, admin_email=data.admin.email,
+            admin_password=data.admin.password, access_status=AccessStatus.ACTIVE,
+            onboarding_stage=OnboardingStage.SETUP_COMPLETE)
         record_audit(self.db, "client.create", user_id=actor.id, client_id=client.id,
                      entity_type="client", entity_id=client.id,
                      details={"admin_user_id": admin.id}, ip_address=ip)
@@ -64,7 +73,7 @@ class ClientService:
 
     def update(self, client_id: int, data: ClientUpdate, actor: User, ip: str | None) -> Client:
         client = self.get(client_id)
-        changes = drop_nulls(data.model_dump(exclude_unset=True), nullable=("phone", "address"))
+        changes = drop_nulls(data.model_dump(exclude_unset=True), nullable=("phone", "address", "country_code"))
         if "email" in changes and changes["email"] != client.email \
                 and self.clients.get_by_email(changes["email"]):
             raise ConflictError(_EMAIL_TAKEN, error_code=_EMAIL_TAKEN_CODE)
@@ -92,7 +101,7 @@ class ClientService:
     def update_own(self, client_id: int, data: ClientProfileUpdate, actor: User,
                    ip: str | None) -> Client:
         client = self.get(client_id)
-        changes = drop_nulls(data.model_dump(exclude_unset=True), nullable=("phone", "address"))
+        changes = drop_nulls(data.model_dump(exclude_unset=True), nullable=("phone", "address", "country_code"))
         for field, value in changes.items():
             setattr(client, field, value)
         record_audit(self.db, "client.update_profile", user_id=actor.id, client_id=client.id,

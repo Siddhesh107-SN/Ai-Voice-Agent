@@ -124,13 +124,23 @@ def test_cancelled_appointment_cannot_be_edited_and_completed_cannot_reopen(clie
 
 
 def test_staff_can_create_and_update_but_not_delete(client):
+    from tests.helpers import elevated_headers, make_elevation_token
     token, cust = _setup(client)
-    create_staff(client, token, "staff@a.com")
+    staff_user = create_staff(client, token, "staff@a.com")
     staff = login_token(client, "staff@a.com")
-    appt = make_appointment(client, staff, cust["id"])
-    assert client.patch(f"/api/v1/appointments/{appt['id']}", headers=auth_headers(staff),
+    assert client.post("/api/v1/appointments", headers=auth_headers(staff),
+                       json={"customer_id": cust["id"], "appointment_date": "2030-01-15",
+                             "appointment_time": "10:00"}).status_code == 403
+    elev = make_elevation_token(staff_user["id"], staff_user["client_id"])
+    h_elev = elevated_headers(staff, elev)
+    resp = client.post("/api/v1/appointments", headers=h_elev,
+                       json={"customer_id": cust["id"], "appointment_date": "2030-01-15",
+                             "appointment_time": "10:00"})
+    assert resp.status_code == 201
+    appt = resp.json()["data"]
+    assert client.patch(f"/api/v1/appointments/{appt['id']}", headers=h_elev,
                         json={"status": "confirmed"}).status_code == 200
-    assert client.delete(f"/api/v1/appointments/{appt['id']}", headers=auth_headers(staff)).status_code == 403
+    assert client.delete(f"/api/v1/appointments/{appt['id']}", headers=h_elev).status_code == 403
 
 
 def test_admin_delete_removes_appointment_and_history_but_keeps_audit_snapshot(client, db):

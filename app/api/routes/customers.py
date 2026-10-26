@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query, Request, status
 
-from app.core.dependencies import ClientAdminUser, ClientMemberUser, DbSession, TenantId
+from app.core.dependencies import (ClientAdminOrElevated, ClientAdminUser,
+                                   ClientMemberUser, DbSession, TenantId)
 from app.schemas.common import ApiResponse, PaginatedResponse
 from app.schemas.customer import CustomerCreate, CustomerOut, CustomerUpdate
 from app.services.customer_service import CustomerService
@@ -27,7 +28,7 @@ def get_customer(customer_id: int, _: ClientMemberUser, tenant_id: TenantId, db:
 
 
 @router.post("", response_model=ApiResponse[CustomerOut], status_code=status.HTTP_201_CREATED)
-def create_customer(request: Request, body: CustomerCreate, actor: ClientAdminUser,
+def create_customer(request: Request, body: CustomerCreate, actor: ClientAdminOrElevated,
                     tenant_id: TenantId, db: DbSession):
     customer = CustomerService(db, tenant_id).create(body, actor, _ip(request))
     return ApiResponse(message="Customer created successfully", data=CustomerOut.model_validate(customer))
@@ -35,7 +36,7 @@ def create_customer(request: Request, body: CustomerCreate, actor: ClientAdminUs
 
 @router.patch("/{customer_id}", response_model=ApiResponse[CustomerOut])
 def update_customer(request: Request, customer_id: int, body: CustomerUpdate,
-                    actor: ClientAdminUser, tenant_id: TenantId, db: DbSession):
+                    actor: ClientAdminOrElevated, tenant_id: TenantId, db: DbSession):
     customer = CustomerService(db, tenant_id).update(customer_id, body, actor, _ip(request))
     return ApiResponse(message="Customer updated successfully", data=CustomerOut.model_validate(customer))
 

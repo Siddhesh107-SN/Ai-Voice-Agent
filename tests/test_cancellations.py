@@ -62,10 +62,13 @@ def test_cancel_unknown_appointment_404(client):
 
 
 def test_staff_can_cancel(client):
+    from tests.helpers import elevated_headers, make_elevation_token
     token, _c, appt = _setup(client)
-    create_staff(client, token, "staff@a.com")
+    staff_user = create_staff(client, token, "staff@a.com")
     staff = login_token(client, "staff@a.com")
-    resp = client.post(f"/api/v1/appointments/{appt['id']}/cancel", headers=auth_headers(staff))
+    assert client.post(f"/api/v1/appointments/{appt['id']}/cancel", headers=auth_headers(staff)).status_code == 403
+    elev = make_elevation_token(staff_user["id"], staff_user["client_id"])
+    resp = client.post(f"/api/v1/appointments/{appt['id']}/cancel", headers=elevated_headers(staff, elev))
     assert resp.status_code == 200
 
 

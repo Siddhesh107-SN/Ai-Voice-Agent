@@ -13,6 +13,47 @@ class ClientStatus(str, enum.Enum):
     DISABLED = "disabled"
 
 
+class AccessStatus(str, enum.Enum):
+    PENDING_PAYMENT = "pending_payment"
+    PAYMENT_REVIEW = "payment_review"
+    ACTIVE = "active"
+    DECLINED = "declined"
+    SUSPENDED = "suspended"
+
+
+class OnboardingStage(str, enum.Enum):
+    AWAITING_PAYMENT_VERIFICATION = "awaiting_payment_verification"
+    AWAITING_BUSINESS_REQUIREMENTS = "awaiting_business_requirements"
+    AGENT_CONFIGURATION = "agent_configuration"
+    TESTING_REVIEW = "testing_review"
+    SETUP_COMPLETE = "setup_complete"
+
+
+class PlanKey(str, enum.Enum):
+    STARTER = "starter"
+    GROWTH = "growth"
+    BUSINESS = "business"
+    ENTERPRISE = "enterprise"
+
+
+class BillingCycle(str, enum.Enum):
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+
+
+class SubscriptionStatus(str, enum.Enum):
+    PENDING = "pending"
+    ACTIVE = "active"
+    CANCELLED = "cancelled"
+
+
+class PaymentStatus(str, enum.Enum):
+    PENDING_VERIFICATION = "pending_verification"
+    VERIFIED = "verified"
+    REJECTED = "rejected"
+
+
+
 class AgentStatus(str, enum.Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"

@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.models.enums import UserRole
+from app.models.enums import AccessStatus, OnboardingStage, UserRole
 from app.utils.validators import validate_password_strength
 
 
@@ -19,6 +19,9 @@ class UserOut(BaseModel):
     role: UserRole
     is_active: bool
     created_at: datetime
+    access_status: AccessStatus | None = None
+    onboarding_stage: OnboardingStage | None = None
+    email_verified: bool = False
 
 
 class UserCreate(BaseModel):

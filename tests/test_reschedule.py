@@ -79,9 +79,16 @@ def test_reschedule_validation_and_unknown_appointment(client):
 
 
 def test_staff_can_reschedule(client):
+    from tests.helpers import elevated_headers, make_elevation_token
     token, _c, appt = _setup(client)
-    create_staff(client, token, "staff@a.com")
-    assert _resched(client, login_token(client, "staff@a.com"), appt["id"]).status_code == 200
+    staff_user = create_staff(client, token, "staff@a.com")
+    staff_tok = login_token(client, "staff@a.com")
+    assert _resched(client, staff_tok, appt["id"]).status_code == 403
+    elev = make_elevation_token(staff_user["id"], staff_user["client_id"])
+    url = f"/api/v1/appointments/{appt['id']}/reschedule"
+    h = elevated_headers(staff_tok, elev)
+    resp = client.post(url, headers=h, json={"new_date": "2030-02-20", "new_time": "14:30"})
+    assert resp.status_code == 200
 
 
 def test_client_timezone_can_be_set_and_is_validated(client):

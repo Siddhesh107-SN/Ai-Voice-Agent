@@ -1,9 +1,11 @@
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, String
+from datetime import datetime
+
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.base import TimestampMixin, str_enum
-from app.models.enums import UserRole
+from app.models.enums import AccessStatus, OnboardingStage, UserRole
 
 
 class User(TimestampMixin, Base):
@@ -26,5 +28,24 @@ class User(TimestampMixin, Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(str_enum(UserRole, "user_role"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
-    client = relationship("Client", back_populates="users")
+
+    client = relationship("Client", back_populates="users", lazy="joined")
+
+    @property
+    def email_verified(self) -> bool:
+        return self.email_verified_at is not None
+
+    @property
+    def access_status(self) -> AccessStatus | None:
+        return self.client.access_status if self.client is not None else None
+
+    @property
+    def onboarding_stage(self) -> OnboardingStage | None:
+        return self.client.onboarding_stage if self.client is not None else None

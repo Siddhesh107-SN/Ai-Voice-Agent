@@ -1,4 +1,5 @@
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (Boolean, ForeignKey, String, Text,
+                        UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -26,5 +27,6 @@ class Agent(TimestampMixin, Base):
     status: Mapped[AgentStatus] = mapped_column(
         str_enum(AgentStatus, "agent_status"), default=AgentStatus.ACTIVE, nullable=False
     )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     client = relationship("Client", back_populates="agents")
