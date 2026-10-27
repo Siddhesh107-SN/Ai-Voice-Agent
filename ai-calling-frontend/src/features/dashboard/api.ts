@@ -170,7 +170,7 @@ export async function fetchInitialDashboardData(): Promise<MockData> {
   const isSuperAdmin = role === 'super_admin';
 
   // Base endpoints for active client member / admin
-  const apptsPromise = http<any[]>('/api/v1/appointments');
+  const apptsPromise = http<any[]>('/api/v1/appointments?limit=100');
   const agentsPromise = isSuperAdmin
     ? http<any[]>('/api/v1/admin/agents')
     : http<any[]>('/api/v1/agents');
@@ -248,6 +248,16 @@ export async function fetchInitialDashboardData(): Promise<MockData> {
     messages,
     logs,
   };
+}
+
+export async function fetchAppointments(): Promise<Appointment[]> {
+  if (isMockMode()) {
+    const mock = await loadMockData();
+    return structuredClone(mock.appts);
+  }
+
+  const rawAppts = await http<any[]>('/api/v1/appointments?limit=100');
+  return (rawAppts || []).map(adaptAppointment);
 }
 
 // ---------------- APPOINTMENTS ----------------
