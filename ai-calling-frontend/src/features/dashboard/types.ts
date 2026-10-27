@@ -33,8 +33,18 @@ export type LogLevel = 'info' | 'warn' | 'error';
 export interface LogEntry { at: string; text: string; level: LogLevel }
 export interface StaffMember { id: string; name: string; title: string; days: boolean[] } // Mon..Sun
 export interface DayHours { open: string; close: string; closed: boolean } // Mon..Sun
+export interface DashboardUser {
+  id: string | number;
+  name: string;
+  email: string;
+  role: Role;
+  is_active: boolean;
+  is_protected: boolean;
+}
+
 export interface MockData {
   appts: Appointment[]; history: Record<string, AppointmentHistoryItem[]>; agents: Agent[]; calls: Call[];
   staff: StaffMember[]; services: string[]; hours: DayHours[]; businesses: Business[];
   requests: AccessRequest[]; messages: ContactMessage[]; logs: LogEntry[];
+  users?: DashboardUser[];
 }

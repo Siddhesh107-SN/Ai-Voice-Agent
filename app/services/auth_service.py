@@ -5,8 +5,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.exceptions import (ForbiddenError, InvalidTokenError,
-                                 TokenExpiredError, UnauthorizedError)
+from app.core.exceptions import (BadRequestError, ForbiddenError, InvalidTokenError,
+                                 NotFoundError, TokenExpiredError, UnauthorizedError)
 from app.core.security import (DUMMY_HASH, TokenType, create_access_token,
                                create_refresh_token, decode_token,
                                hash_password, password_needs_rehash,
@@ -18,6 +18,7 @@ from app.repositories.user_repository import UserRepository
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenPair
 from app.services.audit_service import record_audit
 from app.services.client_service import provision_client
+from app.services.protection_service import assert_user_not_protected
 from app.services.transactions import commit_or_conflict
 
 
@@ -171,4 +172,83 @@ class AuthService:
             pass
 
         record_audit(self.db, "auth.logout", user_id=user_id, client_id=client_id, ip_address=ip)
+        self.db.commit()
+
+    def change_password(
+        self, user: User, current_password: str, new_password: str, ip: str | None = None
+    ) -> None:
+        """Only the account owner may change their own password, through the authenticated flow."""
+        if not verify_password(current_password, user.password_hash):
+            record_audit(
+                self.db,
+                "auth.change_password_failed",
+                user_id=user.id,
+                client_id=user.client_id,
+                ip_address=ip,
+                level="warn",
+                message="Incorrect current password provided",
+            )
+            self.db.commit()
+            raise BadRequestError("Current password is incorrect", error_code="INVALID_CURRENT_PASSWORD")
+
+        user.password_hash = hash_password(new_password)
+        record_audit(
+            self.db,
+            "auth.change_password",
+            user_id=user.id,
+            client_id=user.client_id,
+            ip_address=ip,
+            level="info",
+            message=f"Password changed for user {user.email}",
+        )
+        self.db.commit()
+
+    def forgot_password(self, email: str, ip: str | None = None) -> dict[str, str]:
+        """Request password reset. Protected accounts are rejected with 403."""
+        user = self.users.get_by_email(email.lower())
+        if user is not None and getattr(user, "is_protected", False):
+            assert_user_not_protected(user, "forgot_password", actor=None, db=self.db, ip=ip)
+
+        if user is not None:
+            record_audit(
+                self.db,
+                "auth.forgot_password_requested",
+                user_id=user.id,
+                client_id=user.client_id,
+                ip_address=ip,
+                level="info",
+            )
+            self.db.commit()
+        return {"message": "If this email is registered, instructions to reset your password have been sent."}
+
+    def reset_password_by_admin(
+        self, target_user_id: int, new_password: str, actor: User, ip: str | None = None
+    ) -> None:
+        """Admin or super admin resets a user password. Forbidden if target user is protected."""
+        target_user = self.users.get_by_id(target_user_id)
+        if target_user is None:
+            raise NotFoundError("User not found", error_code="USER_NOT_FOUND")
+
+        if getattr(target_user, "is_protected", False):
+            assert_user_not_protected(
+                target_user,
+                "reset_password",
+                actor=actor,
+                db=self.db,
+                ip=ip,
+                details={"admin_id": actor.id},
+            )
+
+        target_user.password_hash = hash_password(new_password)
+        record_audit(
+            self.db,
+            "auth.admin_reset_password",
+            user_id=actor.id,
+            client_id=actor.client_id,
+            entity_type="user",
+            entity_id=target_user.id,
+            ip_address=ip,
+            level="info",
+            message=f"Admin {actor.email} reset password for {target_user.email}",
+        )
         self.db.commit()

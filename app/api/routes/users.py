@@ -1,5 +1,5 @@
 """Staff management for the caller's own client. The tenant always comes from the token."""
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Request, Response, status
 
 from app.core.dependencies import ClientAdminUser, DbSession, TenantId
 from app.models.enums import UserRole
@@ -40,3 +40,11 @@ def update_user(request: Request, user_id: int, body: UserUpdate, actor: ClientA
                 tenant_id: TenantId, db: DbSession):
     user = UserService(db, tenant_id).update(user_id, body, actor, _ip(request))
     return ApiResponse(message="User updated successfully", data=UserOut.model_validate(user))
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(request: Request, user_id: int, actor: ClientAdminUser, tenant_id: TenantId,
+                db: DbSession):
+    UserService(db, tenant_id).delete(user_id, actor, _ip(request))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+

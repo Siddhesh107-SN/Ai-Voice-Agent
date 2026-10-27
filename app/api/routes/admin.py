@@ -1,18 +1,19 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Response, status
 
 from app.core.dependencies import DbSession, SuperAdminUser
 from app.core.rate_limit import limiter
 from app.schemas.admin import (AccessActionResponse, AccessDeclineRequest,
                                AccessRequestItem, AdminAgentItem,
                                AdminBusinessItem, AdminMessageItem,
-                               AdminMessageUpdateRequest, AgentPowerRequest,
-                               BusinessMinutePackRequest,
+                               AdminMessageUpdateRequest, AdminUserResetPasswordRequest,
+                               AgentPowerRequest, BusinessMinutePackRequest,
                                BusinessStatusUpdateRequest, LogItem,
                                PinResetRequest, PinResetResponse,
                                PinViewResponse)
+from app.schemas.user import UserOut, UserUpdate
 from app.services.admin_service import AdminService
 
 router = APIRouter()
@@ -135,3 +136,30 @@ def update_message_status(
 def stream_payment_screenshot(payment_id: int, user: SuperAdminUser, db: DbSession):
     """Stream securely stored payment screenshot receipt for super_admin review."""
     return AdminService(db).get_screenshot_response(payment_id=payment_id)
+
+
+# ---------------- 6. USER MANAGEMENT & PROTECTION ----------------
+
+@router.patch("/users/{user_id}", response_model=UserOut)
+def admin_update_user(
+    user_id: int, body: UserUpdate, request: Request, user: SuperAdminUser, db: DbSession
+):
+    """Update user by super_admin. Protected accounts reject with 403."""
+    updated = AdminService(db).update_user(target_user_id=user_id, data=body, user=user, ip=_ip(request))
+    return UserOut.model_validate(updated)
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_delete_user(user_id: int, request: Request, user: SuperAdminUser, db: DbSession):
+    """Delete user by super_admin. Protected accounts reject with 403."""
+    AdminService(db).delete_user(target_user_id=user_id, user=user, ip=_ip(request))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/users/{user_id}/reset-password", status_code=status.HTTP_200_OK)
+def admin_reset_user_password(
+    user_id: int, body: AdminUserResetPasswordRequest, request: Request, user: SuperAdminUser, db: DbSession
+):
+    """Reset user password by super_admin. Protected accounts reject with 403."""
+    AdminService(db).reset_user_password(target_user_id=user_id, new_password=body.new_password, user=user, ip=_ip(request))
+    return {"message": "Password reset successfully"}

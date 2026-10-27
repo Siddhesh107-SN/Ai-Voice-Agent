@@ -23,3 +23,4 @@ export const inr = (n: number) => '₹' + n.toLocaleString('en-IN');
 export const initials = (n: string) => n.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
 export const nowLabel = () => { const d = new Date(); return `${d.getDate()} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 export const statusClass = (s: string) => ({ cancelled: 'cancelled', missed: 'cancelled', failed: 'cancelled', completed: 'completed', rescheduled: 'rescheduled', in_progress: 'rescheduled' } as Record<string, string>)[s] ?? '';
+export const canEditUser = (user?: { is_protected?: boolean }) => !user?.is_protected;

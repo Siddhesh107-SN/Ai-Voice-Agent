@@ -25,10 +25,14 @@ from app.schemas.admin import (AccessActionResponse, AccessRequestItem,
                                AdminAgentItem, AdminBusinessItem,
                                AdminMessageItem, LogItem, PinResetResponse,
                                PinViewResponse)
+from app.core.security import hash_password
+from app.schemas.user import UserOut, UserUpdate
 from app.services.audit_service import record_audit
 from app.services.billing_service import BillingService
 from app.services.email_service import EmailService
 from app.services.pin_service import PinService
+from app.services.protection_service import assert_user_not_protected
+from app.utils.helpers import drop_nulls
 
 
 class AdminService:
@@ -583,3 +587,100 @@ class AdminService:
         }.get(ext, "application/octet-stream")
 
         return FileResponse(file_path, media_type=content_type, filename=file_path.name)
+
+    # ---------------- 6. USER MANAGEMENT & PROTECTION ----------------
+
+    def update_user(self, target_user_id: int, data: UserUpdate, user: User, ip: str | None) -> User:
+        target_user = self.db.get(User, target_user_id)
+        if target_user is None:
+            raise NotFoundError(f"User {target_user_id} not found")
+
+        changes = drop_nulls(data.model_dump(exclude_unset=True))
+        if getattr(target_user, "is_protected", False):
+            action = "update"
+            if changes.get("is_active") is False:
+                action = "deactivate"
+            elif "role" in changes:
+                action = "role"
+            elif "email" in changes:
+                action = "email"
+            elif "is_protected" in changes:
+                action = "is_protected"
+            elif "is_verified" in changes:
+                action = "is_verified"
+            assert_user_not_protected(target_user, action, actor=user, db=self.db, ip=ip, details={"changes": list(changes.keys())})
+
+        for field, value in changes.items():
+            if field == "is_verified":
+                from datetime import datetime, timezone
+                target_user.email_verified_at = datetime.now(timezone.utc) if value else None
+            else:
+                setattr(target_user, field, value)
+
+        action_name = "admin.user.deactivate" if changes.get("is_active") is False else "admin.user.update"
+        record_audit(
+            self.db,
+            action=action_name,
+            user_id=user.id,
+            client_id=target_user.client_id,
+            entity_type="user",
+            entity_id=target_user.id,
+            ip_address=ip,
+            level="info",
+            message=f"Super Admin updated user {target_user.email}",
+            details={"fields": sorted(changes)},
+        )
+        self.db.commit()
+        self.db.refresh(target_user)
+        return target_user
+
+    def delete_user(self, target_user_id: int, user: User, ip: str | None) -> None:
+        target_user = self.db.get(User, target_user_id)
+        if target_user is None:
+            raise NotFoundError(f"User {target_user_id} not found")
+
+        if getattr(target_user, "is_protected", False):
+            assert_user_not_protected(target_user, "delete", actor=user, db=self.db, ip=ip)
+
+        self.db.delete(target_user)
+        record_audit(
+            self.db,
+            action="admin.user.delete",
+            user_id=user.id,
+            client_id=target_user.client_id,
+            entity_type="user",
+            entity_id=target_user.id,
+            ip_address=ip,
+            level="warn",
+            message=f"Super Admin deleted user {target_user.email}",
+        )
+        self.db.commit()
+
+    def reset_user_password(self, target_user_id: int, new_password: str, user: User, ip: str | None) -> None:
+        target_user = self.db.get(User, target_user_id)
+        if target_user is None:
+            raise NotFoundError(f"User {target_user_id} not found")
+
+        if getattr(target_user, "is_protected", False):
+            assert_user_not_protected(
+                target_user,
+                "reset_password",
+                actor=user,
+                db=self.db,
+                ip=ip,
+                details={"admin_id": user.id},
+            )
+
+        target_user.password_hash = hash_password(new_password)
+        record_audit(
+            self.db,
+            action="admin.user.reset_password",
+            user_id=user.id,
+            client_id=target_user.client_id,
+            entity_type="user",
+            entity_id=target_user.id,
+            ip_address=ip,
+            level="warn",
+            message=f"Super Admin reset password for {target_user.email}",
+        )
+        self.db.commit()

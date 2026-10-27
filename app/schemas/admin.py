@@ -97,3 +97,7 @@ class AdminMessageItem(BaseModel):
 class AdminMessageUpdateRequest(BaseModel):
     read: bool | None = None
     handled: bool | None = None
+
+
+class AdminUserResetPasswordRequest(BaseModel):
+    new_password: str

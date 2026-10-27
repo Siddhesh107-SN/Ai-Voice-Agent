@@ -20,6 +20,10 @@ class UserRepository:
         self.db.flush()
         return user
 
+    def delete(self, user: User) -> None:
+        self.db.delete(user)
+        self.db.flush()
+
 
 class TenantUserRepository(TenantRepository[User]):
     """Users of ONE client. Use UserRepository only for authentication lookups."""

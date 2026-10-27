@@ -22,6 +22,7 @@ class UserOut(BaseModel):
     access_status: AccessStatus | None = None
     onboarding_stage: OnboardingStage | None = None
     email_verified: bool = False
+    is_protected: bool = False
 
 
 class UserCreate(BaseModel):
@@ -45,5 +46,8 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=150)
+    email: EmailStr | None = None
     role: Literal[UserRole.CLIENT_ADMIN, UserRole.CLIENT_STAFF] | None = None
     is_active: bool | None = None
+    is_protected: bool | None = None
+    is_verified: bool | None = None

@@ -2,8 +2,9 @@ from fastapi import APIRouter, Request, Response, status
 
 from app.core.dependencies import CurrentUser, DbSession
 from app.core.rate_limit import LOGIN_LIMIT, REFRESH_LIMIT, REGISTER_LIMIT, limiter
-from app.schemas.auth import (AuthData, LoginRequest, LogoutRequest,
-                              RefreshRequest, RegisterRequest, TokenPair)
+from app.schemas.auth import (AuthData, ChangePasswordRequest, ForgotPasswordRequest,
+                              LoginRequest, LogoutRequest, RefreshRequest,
+                              RegisterRequest, TokenPair)
 from app.schemas.common import ApiResponse
 from app.schemas.user import UserOut
 from app.services.auth_service import AuthService
@@ -52,3 +53,18 @@ def logout(request: Request, body: LogoutRequest, db: DbSession):
 def me(user: CurrentUser):
     return ApiResponse(message="Current user retrieved successfully",
                        data=UserOut.model_validate(user))
+
+
+@router.post("/change-password", response_model=ApiResponse[dict])
+def change_password(request: Request, body: ChangePasswordRequest, user: CurrentUser, db: DbSession):
+    """Owner changes own password. Requires verified current password."""
+    AuthService(db).change_password(user, body.current_password, body.new_password, _ip(request))
+    return ApiResponse(message="Password changed successfully", data={"status": "success"})
+
+
+@router.post("/forgot-password", response_model=ApiResponse[dict])
+@limiter.limit(LOGIN_LIMIT)
+def forgot_password(request: Request, body: ForgotPasswordRequest, db: DbSession):
+    """Request password reset. Rejected with 403 for protected accounts."""
+    res = AuthService(db).forgot_password(body.email, _ip(request))
+    return ApiResponse(message=res["message"], data={"status": "sent"})
