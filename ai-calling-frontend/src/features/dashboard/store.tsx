@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useRouter } from 'next/navigation';
 import type { LogLevel, MockData, Role } from './types';
 import { nowLabel, TODAY } from './util';
-import { fetchInitialDashboardData, verifyStaffPin, changeStaffPin } from './api';
+import { fetchAppointments, fetchInitialDashboardData, verifyStaffPin, changeStaffPin } from './api';
 import { logoutUser } from '@/lib/http';
 import { AUTH_CHANNEL, AUTH_LOGOUT_KEY } from '@/lib/auth-channel';
 
@@ -201,6 +201,35 @@ export function DashboardProvider({
   useEffect(() => {
     reload();
   }, [reload]);
+
+  useEffect(() => {
+    if (simulate) return;
+
+    const refreshAppointments = async () => {
+      if (document.hidden || logoutStartedRef.current) return;
+      try {
+        const appts = await fetchAppointments();
+        if (logoutStartedRef.current) return;
+        setS((prev) => ({ ...prev, appts }));
+      } catch {
+        // Ignore polling errors and keep the current appointments.
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      void refreshAppointments();
+    };
+
+    const interval = window.setInterval(() => {
+      void refreshAppointments();
+    }, 8000);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [simulate]);
 
   const setTheme = useCallback((theme: Theme) => {
     try {
