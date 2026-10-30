@@ -98,3 +98,64 @@ No files were deleted or otherwise changed.
 - The workflow YAML parsed successfully with the existing Node.js YAML parser; both jobs and the trigger were present.
 - CI itself has not yet run on GitHub in this session. The backend tests, migration against PostgreSQL, and CI-hosted startup check therefore remain unverified here.
 - No application source, dependency manifest, or test file was changed.
+
+# Phase 1.6 TESTFIX
+
+## Change report
+
+- Branch: `phase-1-6-testfix`
+- Base commit: `fa88f28a6f772aea28c86a282a2bc3bc05d078f1`
+- Commit: this report is included in the commit titled `Phase 1.6 TESTFIX`; its resulting hash is reported in chat.
+
+### The 16 CI failures
+
+| # | Test | Root cause | Changed side | File(s) changed |
+|---|---|---|---|---|
+| 1 | `test_admin_businesses_listing_and_pin_isolation` | `PinService` lacked the encryption method used to set up a PIN. | App code | `app/services/pin_service.py` |
+| 2 | `test_admin_minute_pack_and_pin_operations` | PIN reset called a missing encrypt method and PIN view called a missing decrypt method. | App code | `app/services/pin_service.py` |
+| 3 | `test_get_plans_public` | Per-test cleanup removed the global catalog and no fixture reseeded it. | Test fixture | `tests/conftest.py`, `tests/helpers.py` |
+| 4 | `test_approve_and_decline_access_flow` | The approval flow requires the missing Growth plan row. | Test fixture | `tests/conftest.py`, `tests/helpers.py` |
+| 5 | `test_manual_submit_payment_success` | Manual payment setup requires the missing plan catalog. | Test fixture | `tests/conftest.py`, `tests/helpers.py` |
+| 6 | `test_manual_submit_payment_amount_mismatch_and_validations` | Plan rows were absent, and ordinary `AppError` responses use `error_code`, not `code`. | Test fixture and test | `tests/conftest.py`, `tests/helpers.py`, `tests/test_b3_features.py` |
+| 7 | `test_onboarding_status_lifecycle_and_tenant_isolation` | The onboarding payment path requires the missing plan row. | Test fixture | `tests/conftest.py`, `tests/helpers.py` |
+| 8 | `test_billing_me_success_and_alerts` | The test inserted calls without the model's required `phone_number`; valid webhook schema requires it. | Test | `tests/test_b2_features.py` |
+| 9 | `test_billing_me_tenant_isolation` | The test inserted a call without the required `phone_number`; valid webhook schema requires it. | Test | `tests/test_b2_features.py` |
+| 10 | `test_patch_business_rbac` | Test passed a display label instead of `client_staff` and treated the created-user response as login tokens. | Test | `tests/test_b2_features.py` |
+| 11 | `test_manual_submit_payment_auth_and_roles` | Test read tokens from the created-user response and expected `code` instead of `error_code`. | Test | `tests/test_b3_features.py` |
+| 12 | `test_get_business_bundle` | New-client default timezone was configured as UTC despite the expected Asia/Kolkata default. | App code | `app/core/config.py`, `.env.example` |
+| 13 | `test_patch_business_atomic_replacement_and_audit_log` | The business audit details did not include `updated_fields`. | App code | `app/services/business_service.py` |
+| 14 | `test_every_table_has_client_id` | The global `plans` catalog was incorrectly checked as tenant-owned data. | Test | `tests/test_multi_tenant_security.py` |
+| 15 | `test_tenant_tables_have_client_id_index_or_fk` | The global `plans` catalog was incorrectly checked for a tenant FK. | Test | `tests/test_multi_tenant_security.py` |
+| 16 | `test_every_api_route_requires_authentication_unless_allowlisted` | Logout intentionally revokes a refresh token from its body and does not require an access token. | Test | `tests/test_multi_tenant_security.py` |
+
+### Files changed
+
+- `app/services/pin_service.py` — adds `PinService.encrypt_pin` and `decrypt_pin`, using the existing Fernet scheme and configured key path.
+- `app/core/config.py` — changes the default timezone for newly provisioned businesses to Asia/Kolkata.
+- `.env.example` — aligns the documented `DEFAULT_TIMEZONE` with the application default.
+- `app/services/business_service.py` — adds ordered `updated_fields` to audit details while retaining the existing `updated` key; lists only values that actually differ.
+- `tests/helpers.py` — adds a shared idempotent plan-catalog seed helper with migration-equivalent values.
+- `tests/conftest.py` — seeds the four global plans before each test and after cleanup truncates the test data.
+- `tests/test_b2_features.py` — fixes the staff role/token assumptions, adds required call phone numbers, and updates timezone expectations.
+- `tests/test_b3_features.py` — logs the created staff user in and checks the standard `error_code` field for ordinary API errors.
+- `tests/test_calls.py` — updates the date-filter test to cover the new Asia/Kolkata default and a UTC override.
+- `tests/test_multi_tenant_security.py` — excludes only the global plans catalog from tenant-table guards and allowlists unauthenticated logout.
+- `CHANGELOG_PHASES.md` — records this phase and its diagnosis.
+
+No files were created or deleted. No migration or CI workflow was changed.
+
+### Database, API, and environment
+
+- Database changes: none; no migration was added. Existing client rows are not updated.
+- API changes: no route, request, or response contract changed. Working PIN reset/view is a bug fix.
+- Environment changes: `DEFAULT_TIMEZONE`'s application and example default is now `Asia/Kolkata`. No CI environment variables or GitHub secrets were added; PIN encryption continues to use the existing configured key or the existing development/test fallback.
+- Test plan seeding mirrors migration `0006`: Starter (2250/25200, 300 minutes), Growth (5700/66000, 1000), Business (14250/165000, 2500), and custom Enterprise (no fixed prices, 0 included minutes).
+- Global table exclusion is exactly `GLOBAL_TABLES = {"plans"}`; no other table was silently excluded.
+
+### User-visible behavior and verification
+
+- Admin PIN reset and pin-view now use the same Fernet configuration and encryption scheme as PIN verification.
+- Newly provisioned businesses default to `Asia/Kolkata`; existing businesses retain their stored timezone.
+- Business-update audit details now retain `updated` and also include `updated_fields` in hours/services/staff order, limited to values that changed.
+- As requested, pytest and database commands were not run locally. Only `python -m compileall app tests` was run as a syntax check; the CI suite remains to be verified after push.
+- Remaining CI risk: tests could expose failures outside the 16 diagnoses or fixture-order assumptions that cannot be checked without running against the CI PostgreSQL service.

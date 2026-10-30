@@ -584,13 +584,15 @@ def test_super_admin_per_client_summary_matches_that_clients_own_view(client, db
 
 
 # ---------------- structural guards (fail when a future stage forgets isolation) ----------------
+# Global catalog tables are not tenant-owned and do not have client_id.
+GLOBAL_TABLES = {"plans"}
 # Tables whose client_id may be NULL by design (SUPER_ADMIN users, platform-level logs/events).
 NULLABLE_TENANT_TABLES = {"users", "audit_logs", "webhook_events", "call_attempts"}
 
 
 def test_every_table_has_client_id():
     for table in Base.metadata.sorted_tables:
-        if table.name == "clients":
+        if table.name == "clients" or table.name in GLOBAL_TABLES:
             continue
         assert "client_id" in table.c, f"{table.name} has no client_id column"
         if table.name not in NULLABLE_TENANT_TABLES:
@@ -600,7 +602,7 @@ def test_every_table_has_client_id():
 def test_tenant_tables_have_client_id_index_or_fk():
     insp = inspect(engine)
     for table in Base.metadata.sorted_tables:
-        if table.name == "clients":
+        if table.name == "clients" or table.name in GLOBAL_TABLES:
             continue
         fks = insp.get_foreign_keys(table.name)
         fk_cols = {c for fk in fks for c in fk["constrained_columns"]}
@@ -621,6 +623,8 @@ PUBLIC_ROUTES = {"/api/v1/health", "/api/v1/auth/register", "/api/v1/auth/login"
                  "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/book",
                  "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/reschedule",
                  "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/cancel"}
+# Logout revokes the refresh token in its request body and intentionally has no access-token dependency.
+PUBLIC_ROUTES.add("/api/v1/auth/logout")
 
 
 def test_every_api_route_requires_authentication_unless_allowlisted():
