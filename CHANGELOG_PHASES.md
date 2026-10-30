@@ -62,3 +62,39 @@ No files were deleted. `ai-calling-frontend/next.config.mjs` was already using `
 
 - The existing database-backed flow is `/api/v1/auth/verify-email/send` and `/api/v1/auth/verify-email/confirm`; it is separate from the new OTP module and remains unchanged.
 - The standalone `/auth/send-otp` and `/auth/verify-otp` flow uses a six-digit code, an in-memory hashed-code store, a 10-minute expiry, a 60-second resend cooldown, and a five-attempt limit. Its verification handler still has a TODO instead of marking the user verified in the database, and `OtpStep.tsx` is not wired into signup. It calls Resend directly and does not use `EMAIL_BACKEND`.
+
+# Phase 1.5 CI
+
+## Change report
+
+- Branch: `phase-1-syncfix`
+- Base commit: `18280d903eac8d1611875474eddc3b854ab3ce3f`
+- Commit: this report is included in the commit titled `Phase 1.5 CI`; its resulting hash is reported in chat.
+
+### Files changed
+
+- `.github/workflows/ci.yml` — adds push and pull-request CI jobs for backend startup, migrations, tests, and frontend production build.
+- `CHANGELOG_PHASES.md` — records this CI setup and its verification limits.
+
+No files were deleted or otherwise changed.
+
+### Database and API
+
+- Database changes: none.
+- API changes: none.
+- The backend workflow uses only a disposable PostgreSQL 16 service database. Both `DATABASE_URL` and `TEST_DATABASE_URL` point to that service; the test fixture is therefore isolated from any developer or production database.
+
+### Workflow environment and behavior
+
+- Backend CI sets `DATABASE_URL` and `TEST_DATABASE_URL` to the disposable service database URL and `JWT_SECRET_KEY` to a dummy test value. `tests/conftest.py` sets `APP_ENV`, rate limiting, and Sarvam webhook test settings itself.
+- The startup command explicitly unsets `RESEND_API_KEY` and `MAIL_FROM` before importing the application.
+- Frontend CI uses Node 20, `npm ci`, and `npm run build`, with `NEXT_PUBLIC_API_MODE=live`; no API key or GitHub secret is used.
+- No GitHub secrets or repository settings need to be configured.
+- No application behavior changes; this adds CI verification only.
+
+### Verification
+
+- The workflow YAML and commands were reviewed against `app/core/config.py`, `tests/conftest.py`, and the frontend lockfile.
+- The workflow YAML parsed successfully with the existing Node.js YAML parser; both jobs and the trigger were present.
+- CI itself has not yet run on GitHub in this session. The backend tests, migration against PostgreSQL, and CI-hosted startup check therefore remain unverified here.
+- No application source, dependency manifest, or test file was changed.
