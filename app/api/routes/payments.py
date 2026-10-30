@@ -38,9 +38,9 @@ def manual_submit_payment(
     return PaymentService(db).manual_submit(
         user=user,
         package_id=package_id,
-        billing_cycle=billing_cycle,
+        billing_cycle_raw=billing_cycle,
         amount_paid=amount_paid,
-        transaction_id=transaction_id,
+        transaction_id_raw=transaction_id,
         payment_date=payment_date,
         payer_name=payer_name,
         screenshot=screenshot,

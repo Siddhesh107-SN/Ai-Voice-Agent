@@ -31,7 +31,6 @@ export default function SignupView() {
   // Errors and submission state
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState("");
-  const [submitSuccess, setSubmitSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const typingTimer = useRef<number>();
@@ -146,8 +145,6 @@ export default function SignupView() {
     if (isSubmitting) return;
 
     setSubmitError("");
-    setSubmitSuccess("");
-
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
@@ -171,10 +168,8 @@ export default function SignupView() {
         phone: phone.trim(),
         password,
       });
-
-      setSubmitSuccess("Account created successfully. Welcome to Talkaor!");
+      writeDraft({ signupCompleted: true, email: email.trim(), emailVerified: false });
       setBotState("idle");
-      writeDraft({ signupCompleted: true, email: email.trim() });
       router.push(FLOW_ROUTES.package);
     } catch (err: any) {
       const msg = err.message || "Failed to create account. Please try again.";
@@ -503,12 +498,6 @@ export default function SignupView() {
         {submitError && (
           <div role="alert" aria-live="assertive" className="text-xs p-2 rounded-lg bg-[rgba(255,154,139,0.12)] border border-[rgba(255,154,139,0.3)] text-[var(--c-auth-error)] mt-1.5">
             {submitError}
-          </div>
-        )}
-
-        {submitSuccess && (
-          <div role="status" aria-live="polite" className="text-xs p-2 rounded-lg bg-[rgba(40,92,204,0.16)] border border-[rgba(40,92,204,0.4)] text-[var(--c-offwhite)] mt-1.5">
-            {submitSuccess}
           </div>
         )}
 

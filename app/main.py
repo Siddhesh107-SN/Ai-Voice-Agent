@@ -13,6 +13,7 @@ from app.core.dependencies import SuperAdminUser
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import RequestIDMiddleware
 from app.core.rate_limit import limiter
+from app.otp_routes import router as otp_router
 
 
 def create_app() -> FastAPI:
@@ -32,6 +33,7 @@ def create_app() -> FastAPI:
         redoc_url=redoc_url,
         openapi_url=openapi_url,
     )
+    
     app.state.limiter = limiter
     app.add_middleware(RequestIDMiddleware)
     app.add_middleware(
@@ -43,6 +45,7 @@ def create_app() -> FastAPI:
     )
     register_exception_handlers(app)
     app.include_router(api_router)
+    app.include_router(otp_router) 
 
     # Also mount endpoints at root for callers who omit /api/v1 prefix
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -55,6 +58,11 @@ def create_app() -> FastAPI:
     app.include_router(email_verification.router, prefix="/auth/verify-email", tags=["auth"])
     app.include_router(admin.router, prefix="/admin", tags=["admin"])
     app.include_router(contact.router, prefix="/contact", tags=["contact"])
+
+    @app.on_event("startup")
+    def on_startup() -> None:
+        from app.scripts.seed_super_admins import startup_seed_super_admins
+        startup_seed_super_admins()
 
     @app.get("/openapi.json", include_in_schema=False)
     def root_openapi(request: Request, user: SuperAdminUser):

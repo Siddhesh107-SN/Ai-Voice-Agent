@@ -24,17 +24,20 @@ export default function VerifyEmail() {
   const [resendNotice, setResendNotice] = useState("");
   const [isResending, setIsResending] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const hasSentInitialCode = useRef(false);
 
   useEffect(() => {
     const d = readDraft();
     const pkg = PACKAGES.find((p) => p.id === d.selectedPackageId) || PACKAGES[1];
     setGate({ state: "ready", masked: maskEmail(d.email || "your email"), pkg });
 
-    // Automatically send verification code on mount if needed
+    // React Strict Mode mounts effects twice in development; send only once.
+    if (hasSentInitialCode.current) return;
+    hasSentInitialCode.current = true;
+
     http<{ message: string }>("/api/v1/auth/verify-email/send", { method: "POST" })
       .catch((err) => {
-        // Cooldown or already sent is fine, ignore silent error on initial mount
-        console.warn("Initial verify email send notice:", err?.message);
+        setErrorMsg(err?.message || "Failed to send verification code. Please try again.");
       });
   }, []);
 

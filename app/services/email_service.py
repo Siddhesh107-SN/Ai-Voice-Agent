@@ -3,6 +3,8 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+import resend
+
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -25,6 +27,10 @@ class EmailService:
 
         if backend == "smtp":
             self._send_via_smtp(to_email, code)
+            return
+
+        if backend == "resend":
+            self._send_via_resend(to_email, code)
             return
 
         logger.warning("Unknown EMAIL_BACKEND '%s'. Falling back to console dispatch.", backend)
@@ -67,4 +73,26 @@ class EmailService:
             logger.info("Verification email sent via SMTP to %s", to_email)
         except Exception as exc:
             logger.error("Failed to send verification email via SMTP to %s: %s", to_email, exc)
+            raise
+
+    def _send_via_resend(self, to_email: str, code: str) -> None:
+        if not self.settings.resend_api_key:
+            raise RuntimeError("RESEND_API_KEY is required when EMAIL_BACKEND=resend")
+
+        resend.api_key = self.settings.resend_api_key
+        try:
+            resend.Emails.send({
+                "from": self.settings.mail_from,
+                "to": [to_email],
+                "subject": "Verify your email address - Talkaor",
+                "html": (
+                    "<p>Hello,</p>"
+                    f"<p>Your Talkaor verification code is: <strong>{code}</strong></p>"
+                    "<p>This code will expire in 10 minutes.</p>"
+                    "<p>If you did not request this, please ignore this email.</p>"
+                ),
+            })
+            logger.info("Verification email sent via Resend to %s", to_email)
+        except Exception as exc:
+            logger.error("Failed to send verification email via Resend to %s: %s", to_email, exc)
             raise

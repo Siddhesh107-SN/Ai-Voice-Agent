@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads"
 
     email_backend: str = "console"
+    resend_api_key: str = ""
+    mail_from: str = "Talkaor <no-reply@talkaor.tech>"
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
@@ -40,6 +42,11 @@ class Settings(BaseSettings):
     require_email_verification: bool = True
     docs_enabled: bool = False
 
+    superadmin_1_email: str = ""
+    superadmin_1_password: str = ""
+    superadmin_2_email: str = ""
+    superadmin_2_password: str = ""
+    superadmin_sync_passwords: bool = False
 
     @model_validator(mode="after")
     def _check_production_secrets(self) -> "Settings":
