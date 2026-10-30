@@ -211,3 +211,58 @@ No files were created or deleted. No other tables were excluded from the tenant-
 - `python -m compileall app tests` — passed (syntax check only).
 - `pytest` and database commands were not run, as requested; all seven fixes still require confirmation in GitHub CI.
 - No other matching billing method caller was found using object attributes; `BusinessService` already uses dictionary access.
+
+# Phase 1.8 TESTFIX3
+
+## Change report
+
+- Branch: `phase-1-6-testfix` (continued; no branch created).
+- Base commit: `509734ff4af3d95c3f431138a8f866a6a84fc344`.
+- Commit: this report is included in the commit titled `Phase 1.8 TESTFIX3`; its resulting hash is reported in chat.
+
+### Part A — complete guard inventory
+
+All 23 mapped tables across `app/models` and all route modules under `app/api/routes` were inspected.
+
+| Test | Every table/route that would fail | Resolution |
+|---|---|---|
+| `test_every_table_has_client_id` | `enquiries`: nullable `client_id`; `refresh_tokens`: no `client_id` column. | `enquiries` is explicitly documented in `NULLABLE_TENANT_TABLES` as a platform contact-form table. `refresh_tokens` is explicitly classified as user-scoped. |
+| `test_tenant_tables_have_client_id_index_or_fk` | `refresh_tokens`: no `client_id` to reference; it is scoped through `user_id`. | Added it to `USER_SCOPED_TABLES` and verify each such table has a `user_id` foreign key to `users`. All other tenant tables have a client FK; `enquiries.client_id` has a direct client FK and a composite customer/client FK. |
+| `test_every_api_route_requires_authentication_unless_allowlisted` | `GET /api/v1/plans` and `POST /api/v1/contact` were missing from `PUBLIC_ROUTES`. | Added both with a comment identifying their pre-authentication purpose. All remaining routes either require JWT authentication or use an already allowlisted public/provider-authenticated flow. |
+
+Other table classifications: `clients` is the tenant root; `plans` is the existing global catalog; `email_verifications` is user-scoped. Other nullable `client_id` tables remain the documented `users`, `audit_logs`, `webhook_events`, and `call_attempts`. No other table was excluded or newly exempted.
+
+The complete `PUBLIC_ROUTES` set now contains:
+
+- `/api/v1/health` — public health/readiness endpoint.
+- `/api/v1/auth/register` and `/api/v1/auth/login` — public account entry points.
+- `/api/v1/auth/refresh` and `/api/v1/auth/logout` — authenticate through refresh-token request bodies.
+- `/api/v1/auth/forgot-password` — public password-help request, rate-limited per IP.
+- `/api/v1/plans` — public pricing/signup catalog.
+- `/api/v1/contact` — public contact form, protected by a honeypot and a 5-per-hour IP limit.
+- `/api/v1/webhooks/sarvam` — authenticated by Sarvam request signature.
+- `/api/v1/webhooks/sarvam/{token}/outbound` and `/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/{check-slot,book,reschedule,cancel}` — authenticated by the configured secret token in the URL.
+
+### Part B — model and route findings
+
+- `enquiries.client_id` is nullable and is explicitly set to `None` by the public contact submission path. The contact form does not provide a customer ID. For enquiries with a customer, the composite FK on `(client_id, customer_id)` ensures the referenced customer belongs to that same client; the separate FK also validates `client_id` against `clients`.
+- Contact enquiries are read and updated through `/api/v1/admin/messages` and `/api/v1/admin/messages/{message_id}`, both requiring a `SuperAdminUser`. Tenant users therefore cannot read platform-level or other tenants' enquiries through these routes.
+- `refresh_tokens` has no `client_id`; its non-null `user_id` is a foreign key to `users`. It is now checked as user-scoped rather than being assigned a new tenant column.
+- `/api/v1/plans` returns `PlanOut`: catalog ID/key/name, public prices, included and max call minutes, and custom-plan status. It returns no internal costs or tenant-specific data.
+- The other unallowlisted public route found during the full scan was `/api/v1/contact`; it is designed for anonymous contact submissions and is rate-limited with a honeypot. The remaining app routes require authenticated user dependencies, except the already allowlisted signature- or token-authenticated provider endpoints.
+
+### Files, database, API, and behavior
+
+- `tests/test_multi_tenant_security.py` — adds the documented user-scoped and nullable-table exceptions, validates `user_id` FKs for both user-scoped tables, and allowlists public plans/contact routes.
+- `CHANGELOG_PHASES.md` — records this phase and its complete table/route analysis.
+- No files were created or deleted.
+- Database changes: none; no migration or schema change.
+- API changes: none; no route or response contract changed.
+- Environment/configuration changes: none.
+- User-visible behavior changes: none.
+
+### Verification and remaining uncertainty
+
+- `python -m compileall app tests` — passed; syntax check only.
+- `pytest` and database commands were not run, as requested. The three structural/auth tests and the CI suite still need execution in GitHub CI.
+- The failure inventory is based on the current model metadata and registered route modules; CI remains the final confirmation that no test environment-specific issue is hidden behind these failures.

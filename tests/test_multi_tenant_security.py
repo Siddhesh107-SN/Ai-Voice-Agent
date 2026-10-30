@@ -586,10 +586,12 @@ def test_super_admin_per_client_summary_matches_that_clients_own_view(client, db
 # ---------------- structural guards (fail when a future stage forgets isolation) ----------------
 # Global catalog tables are not tenant-owned and do not have client_id.
 GLOBAL_TABLES = {"plans"}
-# Email verification records belong to users and intentionally have no direct tenant key.
-USER_SCOPED_TABLES = {"email_verifications"}
-# Tables whose client_id may be NULL by design (SUPER_ADMIN users, platform-level logs/events).
-NULLABLE_TENANT_TABLES = {"users", "audit_logs", "webhook_events", "call_attempts"}
+# These records belong to users and intentionally have no direct tenant key.
+USER_SCOPED_TABLES = {"email_verifications", "refresh_tokens"}
+# client_id may be NULL for super-admin/platform records and public contact enquiries.
+NULLABLE_TENANT_TABLES = {
+    "users", "audit_logs", "webhook_events", "call_attempts", "enquiries"
+}
 
 
 def test_every_table_has_client_id():
@@ -610,11 +612,12 @@ def test_tenant_tables_have_client_id_index_or_fk():
         fk_cols = {c for fk in fks for c in fk["constrained_columns"]}
         assert "client_id" in fk_cols, f"{table.name}.client_id is not a foreign key"
 
-    user_scoped_fks = insp.get_foreign_keys("email_verifications")
-    assert any(
-        "user_id" in fk["constrained_columns"] and fk["referred_table"] == "users"
-        for fk in user_scoped_fks
-    ), "email_verifications.user_id must be a foreign key to users"
+    for table_name in USER_SCOPED_TABLES:
+        user_scoped_fks = insp.get_foreign_keys(table_name)
+        assert any(
+            "user_id" in fk["constrained_columns"] and fk["referred_table"] == "users"
+            for fk in user_scoped_fks
+        ), f"{table_name}.user_id must be a foreign key to users"
 
 
 def _requires_auth(dependant) -> bool:
@@ -635,6 +638,8 @@ PUBLIC_ROUTES = {"/api/v1/health", "/api/v1/auth/register", "/api/v1/auth/login"
 PUBLIC_ROUTES.add("/api/v1/auth/logout")
 # Forgot-password is public and rate-limited; the admin reset-password route remains super-admin-only.
 PUBLIC_ROUTES.add("/api/v1/auth/forgot-password")
+# Public plan catalog and rate-limited contact form are used before sign-in.
+PUBLIC_ROUTES.update({"/api/v1/plans", "/api/v1/contact"})
 
 
 def test_every_api_route_requires_authentication_unless_allowlisted():
