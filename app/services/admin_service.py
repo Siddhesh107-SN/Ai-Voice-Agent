@@ -247,11 +247,11 @@ class AdminService:
                 AdminBusinessItem(
                     id=client.id,
                     name=client.business_name,
-                    plan=billing_data.plan,
-                    minutes_used=billing_data.minutes_used,
-                    minutes_limit=billing_data.minutes_limit,
+                    plan=billing_data["plan"],
+                    minutes_used=billing_data["minutes_used"],
+                    minutes_limit=billing_data["minutes_limit"],
                     status=status_label,
-                    renews_on=billing_data.renews_on,
+                    renews_on=billing_data["renews_on"],
                     last_login=last_login,
                     has_pin=has_pin,
                 )

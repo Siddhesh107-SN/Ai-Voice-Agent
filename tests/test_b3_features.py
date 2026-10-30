@@ -281,17 +281,18 @@ def test_onboarding_status_lifecycle_and_tenant_isolation(client, db):
     db_u.email_verified_at = datetime.now(timezone.utc)
     db.commit()
 
-    client.post(
+    resp_submit = client.post(
         "/api/v1/payments/manual-submit",
         headers=auth_headers(tok_a),
         data={
             "package_id": "starter",
             "billing_cycle": "monthly",
             "amount_paid": "2250",
-            "transaction_id": "TXN_ONBOARD_A",
+            "transaction_id": "TXNONBOARDA",
             "payment_date": str(date.today()),
         },
     )
+    assert resp_submit.status_code == 200, resp_submit.text
 
     resp_pend = client.get("/api/v1/onboarding/status", headers=auth_headers(tok_a))
     data_pend = resp_pend.json()
@@ -299,7 +300,7 @@ def test_onboarding_status_lifecycle_and_tenant_isolation(client, db):
     assert data_pend["onboardingStage"] == "awaiting_payment_verification"
     assert data_pend["packageName"] == "starter"
     assert data_pend["amount"] == 2250
-    assert data_pend["transactionRef"] == "TXN_ONBOARD_A"
+    assert data_pend["transactionRef"] == "TXNONBOARDA"
     assert data_pend["dashboardAccessGranted"] is False
 
     # 3. Simulate super_admin verifying payment and activating client

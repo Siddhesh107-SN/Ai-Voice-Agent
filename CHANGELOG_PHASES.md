@@ -159,3 +159,55 @@ No files were created or deleted. No migration or CI workflow was changed.
 - Business-update audit details now retain `updated` and also include `updated_fields` in hours/services/staff order, limited to values that changed.
 - As requested, pytest and database commands were not run locally. Only `python -m compileall app tests` was run as a syntax check; the CI suite remains to be verified after push.
 - Remaining CI risk: tests could expose failures outside the 16 diagnoses or fixture-order assumptions that cannot be checked without running against the CI PostgreSQL service.
+
+# Phase 1.7 TESTFIX2
+
+## Change report
+
+- Branch: `phase-1-6-testfix` (continued current branch; no branch created).
+- Base commit: `9767eede85e04da31ebb6407abcb3ca37179426a`.
+- Commit: this report is included in the commit titled `Phase 1.7 TESTFIX2`; its resulting hash is reported in chat.
+
+### The 7 CI failures
+
+| # | Test | Root cause | Changed side | File(s) changed |
+|---|---|---|---|---|
+| 1 | `test_admin_businesses_listing_and_pin_isolation` | `BillingService.get_billing_me()` returns a dictionary, but the admin list accessed it as an object; the intended response fields were otherwise correct. | App code | `app/services/admin_service.py` |
+| 2 | `test_get_business_bundle` | `register_ok()` registers a business named `Biz`; the test expected a suffix that the helper and registration route never send. | Test | `tests/test_b2_features.py` |
+| 3 | `test_manual_submit_payment_amount_mismatch_and_validations` | Duplicate transaction errors had a custom `detail`/`code` shape rather than the standard `success`/`message`/`error_code` body. The frontend accepts both code keys and displays the message, so the app response was standardized. | App code | `app/core/exceptions.py` |
+| 4 | `test_onboarding_status_lifecycle_and_tenant_isolation` | The fixture transaction ID contained underscores and failed the alphanumeric validation before payment submission. | Test | `tests/test_b3_features.py` |
+| 5 | `test_every_table_has_client_id` | `email_verifications` belongs to a user and has no direct `client_id`; the test incorrectly treated it as a tenant-owned table. | Test | `tests/test_multi_tenant_security.py` |
+| 6 | `test_tenant_tables_have_client_id_index_or_fk` | The same user-scoped table is keyed through `user_id`, not `client_id`. The test now verifies its FK to `users`. | Test | `tests/test_multi_tenant_security.py` |
+| 7 | `test_every_api_route_requires_authentication_unless_allowlisted` | Forgot-password is intentionally public and rate-limited; it was missing from the test allowlist. | Test | `tests/test_multi_tenant_security.py` |
+
+### Files changed
+
+- `app/services/admin_service.py` — indexes the billing dictionary fields, preserving the `AdminBusinessItem` response fields and values.
+- `app/core/exceptions.py` — formats duplicate-transaction errors using the standard error body.
+- `tests/test_b2_features.py` — expects the business name actually produced by `register_ok()`.
+- `tests/test_b3_features.py` — uses a valid alphanumeric transaction reference and asserts the payment submission returned HTTP 200.
+- `tests/test_multi_tenant_security.py` — identifies the user-scoped email-verification table, checks its `user_id` foreign key, and allowlists public forgot-password.
+- `CHANGELOG_PHASES.md` — records this phase and its diagnosis.
+
+No files were created or deleted. No other tables were excluded from the tenant-structure checks beyond the already documented global `plans` catalog and user-scoped `email_verifications`.
+
+### Database, API, and environment
+
+- Database changes: none; no migration, table, or column changes.
+- Routes and request formats: unchanged.
+- Response change: duplicate transaction errors now return HTTP 400 with `{"success": false, "message": "Transaction ID already submitted", "error_code": "TRANSACTION_DUPLICATE"}`. The frontend HTTP helper reads both `code` and `error_code` and displays the message, so it does not depend on the old custom shape.
+- Environment/configuration changes: none.
+
+### Forgot-password review and behavior
+
+- `POST /api/v1/auth/forgot-password` is limited to 10 requests per minute per remote IP. It does not impose a per-email limit.
+- For ordinary existing and nonexistent email addresses, it returns the same generic response. Protected accounts are rejected with HTTP 403 by `assert_user_not_protected`, which can reveal that a protected account exists.
+- There is no password-reset token generation, storage (hashed or otherwise), expiry, single-use handling, or reset email in this flow. The response says instructions were sent, but this implementation only records an audit event for a found, non-protected user; it does not send an email.
+- No public reset-password route exists. `/api/v1/admin/users/{user_id}/reset-password` is a separate super-admin-protected operation and was not allowlisted.
+- Admin businesses continue to expose `plan`, `minutes_used`, `minutes_limit`, `status`, `renews_on`, `last_login`, and `has_pin` as before; dictionary access fixes the runtime error without changing the schema.
+
+### Verification and remaining uncertainty
+
+- `python -m compileall app tests` — passed (syntax check only).
+- `pytest` and database commands were not run, as requested; all seven fixes still require confirmation in GitHub CI.
+- No other matching billing method caller was found using object attributes; `BusinessService` already uses dictionary access.

@@ -191,7 +191,7 @@ def test_get_business_bundle(client, db):
     # Verify business info
     b = data["business"]
     assert b["id"] == reg["user"]["client_id"]
-    assert b["name"] == "Biz bizbundle"
+    assert b["name"] == "Biz"
     assert b["plan"] == "growth"
     assert b["minutes_used"] == 0
     assert b["minutes_limit"] == 1000
