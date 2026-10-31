@@ -729,6 +729,7 @@ class AdminService:
                     name=agent.name,
                     languages=languages if isinstance(languages, list) else [str(languages)],
                     phone=agent.phone_number,
+                    phone_number=agent.phone_number,
                     online=agent.is_active,
                     calls_today=calls_today,
                     business_id=agent.client_id,

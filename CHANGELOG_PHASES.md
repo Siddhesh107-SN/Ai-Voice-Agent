@@ -342,3 +342,60 @@ The complete `PUBLIC_ROUTES` set now contains:
 - Tool calls: filter client ID `2` and outcome `Failure` to see the slot conflict; clear the client filter to see an unresolved-client failure. Copy a request ID and try Next.
 - All appointments: filter client ID `2`, source `manual`, and date `2026-10-24` through `2026-10-30`; verify AI-agent/manual badges and newest-created ordering, then try Next.
 - In the development role switcher, select Staff or Admin and confirm the platform links disappear and platform URLs redirect away. The build remains unverified until dependencies are available in CI or another configured environment.
+
+## Phase 3A AGENTLINK-API
+
+### Change report
+
+- Branch: `phase-2`; base commit: `e50e90d052d89399287e4eb0020d3a0dbd87c621`. The implementation is committed as `Phase 3A AGENTLINK-API`; the resulting commit hash is included in the delivery message.
+- `app/models/agent.py` — added the partial unique phone-number index; the nullable phone column and platform-wide `(provider, provider_agent_id)` uniqueness already existed.
+- `app/models/client_tool_credential.py` — added the tenant-scoped credential model with hashed token and lifecycle timestamps.
+- `app/models/__init__.py` — registered the credential model for metadata and schema creation.
+- `alembic/versions/0011_agent_links_and_client_tool_credentials.py` — added the reversible credential table/indexes and phone-number uniqueness migration.
+- `app/schemas/agent_link.py` — added super-admin agent-link, update, integration, and one-time token response schemas with E.164 validation.
+- `app/schemas/admin.py` — added `phone_number` to the existing cross-client admin agent response.
+- `app/core/config.py` — added `PUBLIC_API_BASE_URL` and `SARVAM_LEGACY_SHARED_TOKEN_ENABLED` settings.
+- `.env.example` — documented the optional public API origin and the legacy-token cutover flag.
+- `app/services/admin_agent_service.py` — implemented super-admin agent create/update/soft-unlink, conflict handling, and field-level audit records.
+- `app/services/client_tool_credential_service.py` — implemented credential creation/rotation, integration details, token hashing, and best-effort last-used updates.
+- `app/services/tool_call_log_service.py` — added bounded legacy-token warnings and capped audit logging integration.
+- `app/services/admin_service.py` — included `phone_number` in the existing super-admin agent list.
+- `app/api/routes/admin.py` — added super-admin-only agent-link, unlink, token, and integration endpoints.
+- `app/api/routes/agents.py` — restricted tenant create/delete and non-status updates; retained tenant status toggles and tenant-scoped agent reads.
+- `app/api/routes/sarvam_webhooks.py` — changed the four appointment tool routes to validate per-client credentials, with gated legacy-token compatibility and no token in audit/log messages.
+- `tests/helpers.py` — added test helpers for super-admin agent creation and authentication.
+- `tests/test_agentlink_api.py` — added tests for route authorization, linking and duplicate checks, tenant boundaries, credential rotation/scope, secret non-disclosure, and legacy compatibility.
+- `tests/test_agents.py` — moved agent management assertions to super-admin endpoints and verified soft unlink and retained tenant power toggles.
+- `tests/test_b1_features.py` — updated staff elevation assertions for the new restricted agent permissions.
+- `tests/test_multi_tenant_security.py` — updated cross-tenant agent mutation expectations and asserted tenant creation is forbidden.
+- `CHANGELOG_PHASES.md` — recorded this Phase 3A report.
+
+### Database
+
+- Migration: `0011_agent_links_and_client_tool_credentials.py`, following `0010`.
+- `agents.phone_number` was already nullable in the existing schema, so no duplicate column was added. `(provider, provider_agent_id)` was already protected by the database-wide `uq_agents_provider_ref` constraint.
+- Added partial unique index `uq_agents_phone_number` on non-null phone numbers.
+- Added `client_tool_credentials`: `id`, non-null `client_id` FK, `token_hash`, `created_at`, `rotated_at`, `last_used_at`, and `revoked_at`; added the `client_id` index, unique token-hash constraint, and partial unique active-client index.
+- Upgrade normalizes existing phone formatting and resolves duplicate phone assignments deterministically: the lowest agent ID retains the number and later duplicates are set to null before the unique index is created. Original values changed by this migration are stored temporarily in `agent_phone_number_migration_backup`; downgrade removes the new table/indexes and restores those original values where the phone field has not subsequently been changed. This prevents existing duplicate rows from blocking upgrade and preserves rollback data.
+- The migration is reversible. No existing duplicate provider-agent IDs can block upgrade because the prior database constraint already enforced uniqueness.
+
+### API and behavior
+
+- `POST /api/v1/admin/clients/{client_id}/agents` — super admin only; accepts `name`, `provider`, `provider_agent_id`, `phone_number`, `description`, and `configuration`; returns the created `AgentOut` in the standard response envelope. Duplicate provider-agent IDs and phone numbers return 409 with `AGENT_ID_IN_USE` or `PHONE_IN_USE`.
+- `PATCH /api/v1/admin/agents/{agent_id}` — super admin only; accepts `name`, `provider`, `provider_agent_id`, `phone_number`, and `status`; returns updated `AgentOut`.
+- `POST /api/v1/admin/agents/{agent_id}/unlink` — super admin only; marks the agent inactive without deleting it.
+- `POST /api/v1/admin/clients/{client_id}/tool-token` — super admin only; creates or rotates a credential, immediately revokes the prior one, and returns the raw token and four ready-to-use tool URLs once.
+- `GET /api/v1/admin/clients/{client_id}/integration` — super admin only; returns the signed event webhook URL, four tool URL patterns using `{TOKEN}`, URL absoluteness, credential timestamps/existence, and linked agent IDs and phone numbers; it never returns a credential.
+- `GET /api/v1/agents` and existing `GET /api/v1/admin/agents` — retain existing fields and now include `phone_number`; tenant responses remain tenant-scoped.
+- Tenant `POST /api/v1/agents` and `DELETE /api/v1/agents/{agent_id}` are now forbidden. Tenant `PATCH /api/v1/agents/{agent_id}` accepts only `status`; attempts to modify name, provider, provider-agent ID, or phone return 403. The existing status/power toggle remains available.
+- The four `POST /api/v1/webhooks/sarvam/{token}/{client_id}/appointments/{check-slot|book|reschedule|cancel}` routes now validate the token against that client’s active credential. Invalid or cross-client credentials retain the existing 404 response and create no audit rows. While the legacy flag is enabled, the shared token remains accepted with bounded warning/audit records; valid tool calls and failures continue through the existing capped audit logging. The signed event webhook and outbound webhook route were not changed.
+- New agent and credential operations audit the acting super admin, client ID, and changed field names. Tokens are hashed at rest, compared with constant-time comparison, and excluded from logs/audit details; integration responses use only `{TOKEN}`.
+
+### Configuration, tests, and remaining work
+
+- `PUBLIC_API_BASE_URL` is optional. When unset, integration URLs are relative and `urls_are_absolute` is false. Set it to the public API origin if absolute tool/webhook URLs are required.
+- `SARVAM_LEGACY_SHARED_TOKEN_ENABLED` defaults to `true` for compatibility. Keep it enabled during migration, then set it to `false` after every client uses an individual token. No real secrets were added or changed.
+- New tests: `test_admin_agent_and_integration_routes_require_super_admin` (401/403/success authorization); `test_agent_phone_provider_uniqueness_and_validation` (normalization, invalid phone, and duplicate conflicts); `test_clients_only_read_agent_links_and_can_keep_status_toggle` (client/staff restrictions, power toggles, and tenant scoping); `test_client_tool_tokens_are_scoped_rotated_and_never_logged` (hashing, rotation, cross-client rejection, and no token leakage); `test_legacy_shared_token_flag_logs_without_token_and_can_be_disabled` (gated compatibility and audit/warning behavior).
+- Verification: `python -m compileall app tests` is a syntax-only check. Pytest and database commands were not run as requested; CI must run the full suite and migration checks.
+- No frontend files were changed. Existing dashboard calls `GET /api/v1/agents`, `GET /api/v1/admin/agents`, tenant `PATCH /api/v1/agents/{agent_id}` with only `status`, and super-admin `PATCH /api/v1/admin/agents/{agent_id}/power` remain compatible. Calls to tenant `POST /api/v1/agents`, `DELETE /api/v1/agents/{agent_id}`, or tenant PATCH with fields other than `status` now receive 403. No frontend agent-creation call was found during the prior review.
+- Potential operational issue: existing duplicate phone assignments are deterministically cleared except for the lowest-ID agent during upgrade; the originals are preserved for downgrade. Review these reassigned agents after deployment if their phone links need manual correction.

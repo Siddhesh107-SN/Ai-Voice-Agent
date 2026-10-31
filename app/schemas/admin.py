@@ -67,6 +67,7 @@ class AdminAgentItem(BaseModel):
     name: str
     languages: list[str] = ["English"]
     phone: str | None = None
+    phone_number: str | None = None
     online: bool = True
     calls_today: int = 0
     business_id: int

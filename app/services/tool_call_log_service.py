@@ -22,6 +22,8 @@ MAX_TOOL_LOGS_PER_MINUTE = 60
 _invalid_token_lock = threading.Lock()
 _last_invalid_token_log = 0.0
 _invalid_token_log_interval = 60.0
+_legacy_token_lock = threading.Lock()
+_last_legacy_token_log = 0.0
 _sensitive_key_terms = (
     "token", "secret", "password", "authorization", "apikey", "signature",
 )
@@ -94,6 +96,37 @@ def log_invalid_tool_token(reason: str, request_id: str | None = None) -> None:
         "Sarvam tool request rejected before tenant authentication: %s [request_id=%s]",
         reason[:80], request_id[:128] if request_id else None,
     )
+
+
+def log_legacy_shared_token_use(client_id: int, request_id: str | None = None) -> None:
+    """Emit a single bounded warning per process/minute without retaining the token."""
+    global _last_legacy_token_log
+    now = time.monotonic()
+    with _legacy_token_lock:
+        if now - _last_legacy_token_log < 60.0:
+            return
+        _last_legacy_token_log = now
+    logger.warning(
+        "Legacy shared Sarvam tool token used [client_id=%s request_id=%s]",
+        client_id, request_id[:128] if request_id else None,
+    )
+
+
+def record_legacy_shared_token_use(client_id: int, request_id: str | None) -> None:
+    """Record legacy use in the same capped audit bucket as ordinary tool calls."""
+    try:
+        record_tool_call(
+            client_id=client_id,
+            tool="legacy_shared_token_used",
+            success=True,
+            error_code=None,
+            message="Legacy shared token used",
+            appointment_id=None,
+            duration_ms=0,
+            request_id=request_id,
+        )
+    except Exception:
+        logger.exception("Could not audit legacy Sarvam tool token use")
 
 
 def _tool_lock_key(client_id: int | None) -> int:

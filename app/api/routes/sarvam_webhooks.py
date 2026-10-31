@@ -1,9 +1,12 @@
 import logging
+import hmac
 import secrets
+from hashlib import sha256
 from time import perf_counter
 from typing import Callable, TypeVar
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Path, Request
+from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
@@ -11,12 +14,17 @@ from app.core.dependencies import DbSession
 from app.core.exceptions import AppError, NotFoundError, UnprocessableError
 from app.integrations.sarvam.schemas import SarvamAppointmentRequest, SarvamOutboundPayload
 from app.models.client import Client
+from app.models.client_tool_credential import ClientToolCredential
 from app.schemas.appointment import AppointmentOut
 from app.schemas.common import ApiResponse
 from app.services.agent_request_service import AgentRequestService
 from app.services.sarvam_service import process_sarvam_outbound
 from app.services.tool_call_log_service import (
-    log_invalid_tool_token, record_tool_call, safe_request_id,
+    log_invalid_tool_token, log_legacy_shared_token_use,
+    record_legacy_shared_token_use, record_tool_call, safe_request_id,
+)
+from app.services.client_tool_credential_service import (
+    record_credential_use, token_digest,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,6 +41,46 @@ def verify_sarvam_token(request: Request, token: str = Path(...)) -> None:
         )
         raise NotFoundError("Not found")
     request.state.sarvam_tool_token_valid = True
+
+
+def verify_client_sarvam_token(
+    request: Request,
+    db: DbSession,
+    token: str = Path(...),
+    client_id: int = Path(...),
+) -> None:
+    credential = db.scalar(
+        select(ClientToolCredential).where(
+            ClientToolCredential.client_id == client_id,
+            ClientToolCredential.revoked_at.is_(None),
+        )
+    )
+    if credential and hmac.compare_digest(
+        credential.token_hash, token_digest(token)
+    ):
+        request.state.sarvam_tool_token_valid = True
+        request.state.sarvam_tool_credential_id = credential.id
+        record_credential_use(credential.id)
+        return
+
+    settings = get_settings()
+    legacy = settings.sarvam_webhook_secret
+    if (
+        settings.sarvam_legacy_shared_token_enabled
+        and legacy
+        and hmac.compare_digest(token.encode("utf-8"), legacy.encode("utf-8"))
+    ):
+        request.state.sarvam_tool_token_valid = True
+        request_id = safe_request_id(request, token)
+        log_legacy_shared_token_use(client_id, request_id)
+        record_legacy_shared_token_use(client_id, request_id)
+        return
+
+    log_invalid_tool_token(
+        "invalid_or_unconfigured_token",
+        request_id=safe_request_id(request, token),
+    )
+    raise NotFoundError("Not found")
 
 
 def _safe_record_tool_call(**fields) -> None:
@@ -107,7 +155,7 @@ def _require_date_time(body: SarvamAppointmentRequest) -> tuple:
 
 
 @router.post("/sarvam/{token}/{client_id}/appointments/check-slot",
-             response_model=ApiResponse[dict], dependencies=[Depends(verify_sarvam_token)])
+             response_model=ApiResponse[dict], dependencies=[Depends(verify_client_sarvam_token)])
 def check_slot(request: Request, token: str, client_id: int,
                body: SarvamAppointmentRequest, db: DbSession):
     def operation():
@@ -124,7 +172,7 @@ def check_slot(request: Request, token: str, client_id: int,
 
 @router.post("/sarvam/{token}/{client_id}/appointments/book",
              response_model=ApiResponse[AppointmentOut],
-             dependencies=[Depends(verify_sarvam_token)])
+             dependencies=[Depends(verify_client_sarvam_token)])
 def book(request: Request, token: str, client_id: int,
          body: SarvamAppointmentRequest, db: DbSession):
     def operation():
@@ -141,7 +189,7 @@ def book(request: Request, token: str, client_id: int,
 
 @router.post("/sarvam/{token}/{client_id}/appointments/reschedule",
              response_model=ApiResponse[AppointmentOut],
-             dependencies=[Depends(verify_sarvam_token)])
+             dependencies=[Depends(verify_client_sarvam_token)])
 def reschedule(request: Request, token: str, client_id: int,
                body: SarvamAppointmentRequest, db: DbSession):
     def operation():
@@ -162,7 +210,7 @@ def reschedule(request: Request, token: str, client_id: int,
 
 @router.post("/sarvam/{token}/{client_id}/appointments/cancel",
              response_model=ApiResponse[AppointmentOut],
-             dependencies=[Depends(verify_sarvam_token)])
+             dependencies=[Depends(verify_client_sarvam_token)])
 def cancel(request: Request, token: str, client_id: int,
            body: SarvamAppointmentRequest, db: DbSession):
     def operation():

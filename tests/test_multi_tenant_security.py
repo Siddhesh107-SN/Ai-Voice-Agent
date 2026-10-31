@@ -492,16 +492,15 @@ def test_cannot_read_modify_or_delete_other_tenants_agent(client, db, tenants):
     h = auth_headers(tenants["a"]["token"])
     assert client.get(f"/api/v1/agents/{b_agent['id']}", headers=h).status_code == 404
     assert client.patch(f"/api/v1/agents/{b_agent['id']}", headers=h,
-                        json={"name": "hacked"}).status_code == 404
-    assert client.delete(f"/api/v1/agents/{b_agent['id']}", headers=h).status_code == 404
+                        json={"name": "hacked"}).status_code == 403
+    assert client.delete(f"/api/v1/agents/{b_agent['id']}", headers=h).status_code == 403
     assert db.get(Agent, b_agent["id"]).name == "Agent B"
 
 
-def test_body_client_id_is_ignored_when_creating_agent(client, tenants):
-    b_id = tenants["b"]["client_id"]
+def test_client_cannot_create_agent_even_with_forged_client_id(client, tenants):
     resp = client.post("/api/v1/agents", headers=auth_headers(tenants["a"]["token"]),
-                       json={"name": "New", "client_id": b_id})
-    assert resp.json()["data"]["client_id"] == tenants["a"]["client_id"]
+                       json={"name": "New", "client_id": tenants["b"]["client_id"]})
+    assert resp.status_code == 403
 
 
 def test_only_super_admin_can_list_a_clients_agents(client, tenants):

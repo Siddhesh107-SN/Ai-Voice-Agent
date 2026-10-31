@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Request, Response, status
 
+from app.core.config import get_settings
 from app.core.dependencies import DbSession, SuperAdminUser
 from app.core.rate_limit import limiter
 from app.models.enums import AppointmentStatus
@@ -17,9 +18,14 @@ from app.schemas.admin import (AccessActionResponse, AccessDeclineRequest,
                                BusinessStatusUpdateRequest, LogItem,
                                PinResetRequest, PinResetResponse,
                                PinViewResponse)
+from app.schemas.agent import AgentOut
+from app.schemas.agent_link import (AdminAgentCreate, AdminAgentUpdate,
+                                    ClientIntegrationOut, ClientToolTokenOut)
 from app.schemas.user import UserOut, UserUpdate
+from app.services.admin_agent_service import AdminAgentService
 from app.services.admin_service import AdminService
-from app.schemas.common import PaginatedResponse
+from app.services.client_tool_credential_service import ClientToolCredentialService
+from app.schemas.common import ApiResponse, PaginatedResponse
 from app.utils.pagination import PageParamsDep, paginated
 
 router = APIRouter()
@@ -96,6 +102,63 @@ def reset_business_pin(
 def list_all_agents(user: SuperAdminUser, db: DbSession):
     """Retrieve all agents across all tenants with call metrics."""
     return AdminService(db).get_agents()
+
+
+@router.post(
+    "/clients/{client_id}/agents",
+    response_model=ApiResponse[AgentOut],
+    status_code=status.HTTP_201_CREATED,
+)
+def create_client_agent(
+    client_id: int, body: AdminAgentCreate, request: Request,
+    user: SuperAdminUser, db: DbSession,
+):
+    agent = AdminAgentService(db).create(client_id, body, user, _ip(request))
+    return ApiResponse(message="Agent linked successfully",
+                        data=AgentOut.model_validate(agent))
+
+@router.patch("/agents/{agent_id}", response_model=ApiResponse[AgentOut])
+def update_agent_link(
+    agent_id: int, body: AdminAgentUpdate, request: Request,
+    user: SuperAdminUser, db: DbSession,
+):
+    agent = AdminAgentService(db).update(agent_id, body, user, _ip(request))
+    return ApiResponse(message="Agent updated successfully",
+                        data=AgentOut.model_validate(agent))
+
+
+@router.post("/agents/{agent_id}/unlink", response_model=ApiResponse[AgentOut])
+def unlink_agent(
+    agent_id: int, request: Request, user: SuperAdminUser, db: DbSession,
+):
+    agent = AdminAgentService(db).unlink(agent_id, user, _ip(request))
+    return ApiResponse(message="Agent unlinked successfully",
+                        data=AgentOut.model_validate(agent))
+
+@router.post(
+    "/clients/{client_id}/tool-token",
+    response_model=ApiResponse[ClientToolTokenOut],
+)
+def create_or_rotate_client_tool_token(
+    client_id: int, request: Request, user: SuperAdminUser, db: DbSession,
+):
+    result = ClientToolCredentialService(db).create_or_rotate(
+        client_id, user, _ip(request), get_settings().public_api_base_url
+    )
+    return ApiResponse(message="Client tool token created or rotated", data=result)
+
+
+@router.get(
+    "/clients/{client_id}/integration",
+    response_model=ApiResponse[ClientIntegrationOut],
+)
+def get_client_integration(
+    client_id: int, user: SuperAdminUser, db: DbSession,
+):
+    result = ClientToolCredentialService(db).integration(
+        client_id, get_settings().public_api_base_url
+    )
+    return ApiResponse(message="Client integration details retrieved", data=result)
 
 
 @router.patch("/agents/{agent_id}/power")
