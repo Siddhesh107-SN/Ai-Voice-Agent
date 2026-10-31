@@ -5,9 +5,13 @@ from fastapi import APIRouter, Query, Request, Response, status
 
 from app.core.dependencies import DbSession, SuperAdminUser
 from app.core.rate_limit import limiter
+from app.models.enums import AppointmentStatus
 from app.schemas.admin import (AccessActionResponse, AccessDeclineRequest,
                                AccessRequestItem, AdminAgentItem,
-                               AdminBusinessItem, AdminMessageItem,
+                               AdminAppointmentItem, AdminBusinessItem,
+                               AdminHealthDetails, AdminMessageItem,
+                               AdminMonitoringItem, AdminToolCallItem,
+                               AdminWebhookEventDetail, AdminWebhookEventItem,
                                AdminMessageUpdateRequest, AdminUserResetPasswordRequest,
                                AgentPowerRequest, BusinessMinutePackRequest,
                                BusinessStatusUpdateRequest, LogItem,
@@ -15,6 +19,8 @@ from app.schemas.admin import (AccessActionResponse, AccessDeclineRequest,
                                PinViewResponse)
 from app.schemas.user import UserOut, UserUpdate
 from app.services.admin_service import AdminService
+from app.schemas.common import PaginatedResponse
+from app.utils.pagination import PageParamsDep, paginated
 
 router = APIRouter()
 
@@ -163,3 +169,60 @@ def admin_reset_user_password(
     """Reset user password by super_admin. Protected accounts reject with 403."""
     AdminService(db).reset_user_password(target_user_id=user_id, new_password=body.new_password, user=user, ip=_ip(request))
     return {"message": "Password reset successfully"}
+
+
+# ---------------- 7. LOGWATCH ----------------
+
+@router.get("/webhook-events", response_model=PaginatedResponse[AdminWebhookEventItem])
+def list_webhook_events(
+    user: SuperAdminUser, db: DbSession, page: PageParamsDep,
+    status_filter: str | None = Query(None, alias="status"),
+    client_id: int | None = None, event_type: str | None = None,
+    date_from: datetime | None = None, date_to: datetime | None = None,
+):
+    items, total = AdminService(db).get_webhook_events(
+        page.offset, page.limit, status=status_filter, client_id=client_id,
+        event_type=event_type, date_from=date_from, date_to=date_to)
+    return paginated(items, total, page, AdminWebhookEventItem)
+
+
+@router.get("/webhook-events/{id}", response_model=AdminWebhookEventDetail)
+def get_webhook_event(id: int, user: SuperAdminUser, db: DbSession):
+    return AdminService(db).get_webhook_event(id)
+
+
+@router.get("/tool-calls", response_model=PaginatedResponse[AdminToolCallItem])
+def list_tool_calls(
+    user: SuperAdminUser, db: DbSession, page: PageParamsDep,
+    client_id: int | None = None, tool: str | None = None,
+    success: bool | None = None,
+    date_from: datetime | None = None, date_to: datetime | None = None,
+):
+    items, total = AdminService(db).get_tool_calls(
+        page.offset, page.limit, client_id=client_id, tool=tool, success=success,
+        date_from=date_from, date_to=date_to)
+    return paginated(items, total, page, AdminToolCallItem)
+
+
+@router.get("/appointments", response_model=PaginatedResponse[AdminAppointmentItem])
+def list_admin_appointments(
+    user: SuperAdminUser, db: DbSession, page: PageParamsDep,
+    client_id: int | None = None, status_filter: AppointmentStatus | None = Query(None, alias="status"),
+    source: str | None = Query(None, pattern="^(ai_agent|manual)$"),
+    date_from: date | None = None, date_to: date | None = None,
+):
+    items, total = AdminService(db).get_admin_appointments(
+        page.offset, page.limit, client_id=client_id, status=status_filter,
+        source=source, date_from=date_from, date_to=date_to)
+    return paginated(items, total, page, AdminAppointmentItem)
+
+
+@router.get("/monitoring", response_model=PaginatedResponse[AdminMonitoringItem])
+def admin_monitoring(user: SuperAdminUser, db: DbSession, page: PageParamsDep):
+    items, total = AdminService(db).get_monitoring(page.offset, page.limit)
+    return paginated(items, total, page, AdminMonitoringItem)
+
+
+@router.get("/health/details", response_model=AdminHealthDetails)
+def admin_health_details(user: SuperAdminUser, db: DbSession):
+    return AdminService(db).get_health_details()

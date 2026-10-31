@@ -266,3 +266,41 @@ The complete `PUBLIC_ROUTES` set now contains:
 - `python -m compileall app tests` — passed; syntax check only.
 - `pytest` and database commands were not run, as requested. The three structural/auth tests and the CI suite still need execution in GitHub CI.
 - The failure inventory is based on the current model metadata and registered route modules; CI remains the final confirmation that no test environment-specific issue is hidden behind these failures.
+
+## Phase 2A LOGWATCH-API
+
+### Change report
+
+- Branch: `phase-2`; base commit: `f31c3b6536fc7a69db3d1e5434cbe5a4021e43e6`. This entry is included in the commit titled `Phase 2A LOGWATCH-API`; the exact commit hash is reported in the completion message.
+- Database: added reversible Alembic migration `0010_logwatch_indexes_and_request_id.py`. It adds nullable `webhook_events.request_id` (`TEXT`) and conditionally creates indexes on `webhook_events(status, created_at)`, `webhook_events(client_id, created_at)`, and `audit_logs(action, created_at)`. Tool-call records reuse `audit_logs`; no new table is added. CI runs `alembic upgrade head`; test fixtures subsequently drop and recreate tables through SQLAlchemy `create_all`.
+- Webhook processing now sets `processed_at`, status, and failure details on processed, failed, and duplicate outcomes; known-agent failures retain the agent's client ID, and an existing client ID in failure metadata may attribute an otherwise unknown-agent event. Duplicate deliveries still receive the same Sarvam response while the stored event is marked duplicate. The middleware's existing `X-Request-ID` response header behavior is unchanged; request IDs are stored on webhook events and tool audit details.
+- Tool calls for `check-slot`, `book`, `reschedule`, and `cancel` now create best-effort `sarvam_tool.*` audit rows after token verification. Rows include URL client ID (including the requested ID in details for unknown clients), action, outcome, error code/message, appointment ID, duration, and request ID. A transaction-serialized per-minute cap applies per client and to a shared null-client bucket. Invalid/missing token attempts are bounded application logs only; they do not create audit rows. Tool responses are not changed if logging fails.
+- New super-admin read APIs: `GET /api/v1/admin/webhook-events` (status, client, event-type, date filters; paginated); `GET /api/v1/admin/webhook-events/{id}` (same fields plus sanitized payload); `GET /api/v1/admin/tool-calls` (client, tool, success, date filters; paginated); `GET /api/v1/admin/appointments` (client, status, source, date filters; paginated); `GET /api/v1/admin/monitoring` (paginated cross-client operational/billing summary); and `GET /api/v1/admin/health/details` (database status, last webhook time, configuration-presence booleans, email backend name). All require `SuperAdminUser`.
+- Tenant `GET /api/v1/appointments` accepts optional `order=asc|desc`; the default remains ascending and `desc` orders newest appointment date/time first. Its response shape is unchanged. The public `/api/v1/health` route is unchanged.
+- Security: webhook detail payloads are recursively scrubbed of keys containing token, secret, password, authorization, api-key, or signature markers; phone-like values are masked to their last four digits, and configured secret values are redacted. Tool-call logs do not contain request bodies or phone numbers. No URL token is stored. Monitoring exposes only whether a provider agent ID exists, never its value.
+
+### Files changed
+
+- `app/api/routes/admin.py` — registered the six super-admin Logwatch routes with existing authentication and pagination patterns.
+- `app/api/routes/appointments.py` — added the optional appointment ordering query parameter.
+- `app/api/routes/sarvam_webhooks.py` — wrapped all four tool routes with best-effort audit logging and bounded invalid-token logs.
+- `app/api/routes/webhooks.py` — passed middleware request IDs into webhook processing.
+- `app/core/exceptions.py` — audited valid-token schema failures and bounded missing-token application logs without changing error responses.
+- `app/models/audit_log.py` — declared the action/created-time index.
+- `app/models/webhook_event.py` — added nullable request ID and webhook query indexes.
+- `app/schemas/admin.py` — added response models for event, tool-call, appointment, monitoring, and health details.
+- `app/services/admin_service.py` — implemented filtered, paginated Logwatch queries and monitoring/health summaries.
+- `app/services/appointment_service.py` — added descending ordering while retaining the existing default.
+- `app/services/billing_service.py` — added shared summary and batched, read-only billing calculations for monitoring, without changing existing billing calls.
+- `app/services/tool_call_log_service.py` — added capped audit persistence, token-safe logging, recursive masking, and payload sanitization.
+- `app/services/webhook_service.py` — recorded event completion state, failure attribution, duplicate status, and request IDs.
+- `alembic/versions/0010_logwatch_indexes_and_request_id.py` — added the reversible request-ID column and conditional indexes.
+- `tests/test_logwatch_api.py` — added endpoint authorization/filtering/redaction, monitoring scoping, tool logging/cap/failure, webhook outcome, and ordering tests.
+- `CHANGELOG_PHASES.md` — documented Phase 2A implementation and operational notes.
+
+### Tests, configuration, and remaining work
+
+- Added tests: `test_all_logwatch_routes_enforce_super_admin_authentication` covers 401/403/200 role boundaries; `test_webhook_event_filters_pagination_and_detail_redaction`, `test_tool_call_filters_pagination_and_no_sensitive_data`, and `test_admin_appointments_filters_order_and_pagination` cover list filters/pagination and response contents; `test_monitoring_is_tenant_scoped_and_paginated` covers cross-tenant metrics; `test_health_details_exposes_presence_booleans_not_secret_values` covers configuration redaction; `test_tool_call_audit_records_success_failure_masking_and_request_id`, `test_invalid_tool_token_creates_no_audit_row`, `test_valid_tool_failures_are_capped_without_changing_response`, `test_valid_token_schema_validation_failure_is_audited`, `test_unknown_client_failure_uses_shared_null_tenant_log_bucket`, `test_unknown_client_tool_audits_share_the_cap`, and `test_tool_logging_failure_does_not_change_tool_response` cover tool logging and failure isolation; `test_webhook_events_capture_processing_outcomes_and_request_ids` covers webhook statuses/attribution/correlation; and `test_tenant_appointment_desc_order_is_opt_in` covers descending order plus the unchanged default.
+- No dependencies or environment variables were added or changed. Plan prices, included minutes, and Sarvam response shapes/status codes are unchanged.
+- Local `pytest`, database startup, and migration execution were not run as requested. `python -m compileall app tests` is the only local validation; GitHub CI remains responsible for migration and test execution.
+- No frontend files were touched, and no push was performed.
