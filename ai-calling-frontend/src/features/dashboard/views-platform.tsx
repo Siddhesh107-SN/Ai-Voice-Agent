@@ -264,7 +264,7 @@ export function FleetView() {
     }
   };
 
-  if (!isSA) return <AccessDenied />;
+  if (!isSA) return <section className="card">Super Admin access is required to view this page.</section>;
 
   return (
     <>
