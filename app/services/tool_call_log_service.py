@@ -112,23 +112,6 @@ def log_legacy_shared_token_use(client_id: int, request_id: str | None = None) -
     )
 
 
-def record_legacy_shared_token_use(client_id: int, request_id: str | None) -> None:
-    """Record legacy use in the same capped audit bucket as ordinary tool calls."""
-    try:
-        record_tool_call(
-            client_id=client_id,
-            tool="legacy_shared_token_used",
-            success=True,
-            error_code=None,
-            message="Legacy shared token used",
-            appointment_id=None,
-            duration_ms=0,
-            request_id=request_id,
-        )
-    except Exception:
-        logger.exception("Could not audit legacy Sarvam tool token use")
-
-
 def _tool_lock_key(client_id: int | None) -> int:
     return (0x53415256 << 32) + (client_id or 0)
 
@@ -157,50 +140,52 @@ def record_tool_call(
     appointment_id: int | None,
     duration_ms: int,
     request_id: str | None,
+    legacy_shared_token_used: bool = False,
 ) -> None:
-    """Persist a capped audit row in its own transaction; logging never affects the call."""
-    try:
-        with SessionLocal() as db:
-            now = datetime.now(timezone.utc)
-            tenant_resolution = "resolved"
-            requested_client_id = client_id
-            if client_id is not None:
-                client = db.get(Client, client_id)
-                if client is None:
-                    client_id = None
-                    tenant_resolution = "unknown_client_id"
-                elif (
-                    not client.is_active
-                    or client.status.value != "active"
-                    or client.access_status.value == "suspended"
-                ):
-                    tenant_resolution = "inactive_client"
-            if not _allowed_to_log(db, client_id, now):
-                db.rollback()
-                return
-            level = (
-                "info" if success else
-                "error" if error_code == "INTERNAL_ERROR" else "warning"
-            )
-            action = f"sarvam_tool.{tool}"
-            details = {
-                "tool": tool,
-                "success": success,
-                "error_code": error_code,
-                "duration_ms": max(0, duration_ms),
-                "appointment_id": appointment_id,
-                "request_id": request_id[:255] if request_id else None,
-                "tenant_resolution": tenant_resolution,
-                "requested_client_id": requested_client_id,
-            }
-            safe_message = sanitize_payload(message)[:255] if message else None
-            record_audit(
-                db, action, client_id=client_id, details=details,
-                level=level, message=safe_message,
-            )
-            db.commit()
-    except Exception:
-        logger.exception("Could not write Sarvam tool audit record")
+    """Persist one capped tool audit row in its own transaction."""
+    with SessionLocal() as db:
+        now = datetime.now(timezone.utc)
+        tenant_resolution = "resolved"
+        requested_client_id = client_id
+        if client_id is not None:
+            client = db.get(Client, client_id)
+            if client is None:
+                client_id = None
+                tenant_resolution = "unknown_client_id"
+            elif (
+                not client.is_active
+                or client.status.value != "active"
+                or client.access_status.value == "suspended"
+            ):
+                tenant_resolution = "inactive_client"
+        if not _allowed_to_log(db, client_id, now):
+            db.rollback()
+            return
+        level = (
+            "info" if success else
+            "error" if error_code == "INTERNAL_ERROR" else "warning"
+        )
+        action = f"sarvam_tool.{tool}"
+        details = {
+            "tool": tool,
+            "success": success,
+            "error_code": error_code,
+            "duration_ms": max(0, duration_ms),
+            "appointment_id": appointment_id,
+            "request_id": request_id[:255] if request_id else None,
+            "tenant_resolution": tenant_resolution,
+            "requested_client_id": requested_client_id,
+        }
+        if legacy_shared_token_used:
+            details["legacy_shared_token_used"] = True
+        if legacy_shared_token_used and message is None:
+            message = "Legacy shared token used"
+        safe_message = sanitize_payload(message)[:255] if message else None
+        record_audit(
+            db, action, client_id=client_id, details=details,
+            level=level, message=safe_message,
+        )
+        db.commit()
 
 
 def log_tool_validation_failure(request) -> None:
@@ -224,4 +209,7 @@ def log_tool_validation_failure(request) -> None:
         error_code="VALIDATION_ERROR", message="Validation failed",
         appointment_id=None, duration_ms=0,
         request_id=safe_request_id(request, token),
+        legacy_shared_token_used=getattr(
+            request.state, "sarvam_legacy_shared_token_used", False
+        ),
     )

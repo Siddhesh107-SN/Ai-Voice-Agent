@@ -20,8 +20,8 @@ from app.schemas.common import ApiResponse
 from app.services.agent_request_service import AgentRequestService
 from app.services.sarvam_service import process_sarvam_outbound
 from app.services.tool_call_log_service import (
-    log_invalid_tool_token, log_legacy_shared_token_use,
-    record_legacy_shared_token_use, record_tool_call, safe_request_id,
+    log_invalid_tool_token, log_legacy_shared_token_use, record_tool_call,
+    safe_request_id,
 )
 from app.services.client_tool_credential_service import (
     record_credential_use, token_digest,
@@ -71,9 +71,9 @@ def verify_client_sarvam_token(
         and hmac.compare_digest(token.encode("utf-8"), legacy.encode("utf-8"))
     ):
         request.state.sarvam_tool_token_valid = True
+        request.state.sarvam_legacy_shared_token_used = True
         request_id = safe_request_id(request, token)
         log_legacy_shared_token_use(client_id, request_id)
-        record_legacy_shared_token_use(client_id, request_id)
         return
 
     log_invalid_tool_token(
@@ -94,6 +94,9 @@ def _logged_tool_call(request: Request, db: DbSession, client_id: int, tool: str
                       operation: Callable[[], T], token: str,
                       appointment_id: int | None = None) -> T:
     started = perf_counter()
+    legacy_shared_token_used = getattr(
+        request.state, "sarvam_legacy_shared_token_used", False
+    )
     try:
         if db.get(Client, client_id) is None:
             raise NotFoundError("Not found")
@@ -105,6 +108,7 @@ def _logged_tool_call(request: Request, db: DbSession, client_id: int, tool: str
             appointment_id=appointment_id,
             duration_ms=round((perf_counter() - started) * 1000),
             request_id=safe_request_id(request, token),
+            legacy_shared_token_used=legacy_shared_token_used,
         )
         raise
     except Exception as exc:
@@ -116,6 +120,7 @@ def _logged_tool_call(request: Request, db: DbSession, client_id: int, tool: str
             appointment_id=appointment_id,
             duration_ms=round((perf_counter() - started) * 1000),
             request_id=safe_request_id(request, token),
+            legacy_shared_token_used=legacy_shared_token_used,
         )
         raise
 
@@ -127,6 +132,7 @@ def _logged_tool_call(request: Request, db: DbSession, client_id: int, tool: str
         appointment_id=appointment_id,
         duration_ms=round((perf_counter() - started) * 1000),
         request_id=safe_request_id(request, token),
+        legacy_shared_token_used=legacy_shared_token_used,
     )
     return result
 

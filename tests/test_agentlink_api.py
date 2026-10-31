@@ -115,7 +115,10 @@ def test_admin_agent_and_integration_routes_require_super_admin(client, db):
     assert client.post(token_path, headers=root_headers).status_code == 200
 
     audit_rows = db.scalars(
-        select(AuditLog).where(AuditLog.user_id == root.id)
+        select(AuditLog).where(
+            AuditLog.user_id == root.id,
+            AuditLog.action.like("admin.%"),
+        )
     ).all()
     actions = {row.action for row in audit_rows}
     assert {"admin.agent.link", "admin.agent.update", "admin.agent.unlink",
@@ -307,10 +310,12 @@ def test_legacy_shared_token_flag_logs_without_token_and_can_be_disabled(
     legacy_row = db.scalar(
         select(AuditLog).where(
             AuditLog.client_id == tenant["id"],
-            AuditLog.action == "sarvam_tool.legacy_shared_token_used",
+            AuditLog.action == "sarvam_tool.book",
         )
     )
-    assert legacy_row is not None and legacy_row.message == "Legacy shared token used"
+    assert legacy_row is not None
+    assert legacy_row.message == "Legacy shared token used"
+    assert legacy_row.details["legacy_shared_token_used"] is True
     assert legacy_row.id > (before or 0)
 
     monkeypatch.setattr(get_settings(), "sarvam_legacy_shared_token_enabled", False)
