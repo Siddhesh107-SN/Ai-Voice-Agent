@@ -278,6 +278,9 @@ def test_client_admin_or_elevated_on_mutating_endpoints(client):
                         json={"name": "Agent B"}).status_code == 403
     assert client.patch(f"/api/v1/agents/{ag_id}", headers=h_staff_elev,
                         json={"name": "Agent B"}).status_code == 403
+    assert client.get(
+        f"/api/v1/agents/{ag_id}", headers=auth_headers(admin_tok)
+    ).json()["data"]["name"] == "Agent A"
     assert client.patch(f"/api/v1/agents/{ag_id}", headers=h_staff_elev,
                         json={"status": "inactive"}).status_code == 200
 

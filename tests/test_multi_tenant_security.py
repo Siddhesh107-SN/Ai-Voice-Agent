@@ -491,16 +491,48 @@ def test_cannot_read_modify_or_delete_other_tenants_agent(client, db, tenants):
     b_agent = create_agent(client, tenants["b"]["token"], "Agent B")
     h = auth_headers(tenants["a"]["token"])
     assert client.get(f"/api/v1/agents/{b_agent['id']}", headers=h).status_code == 404
-    assert client.patch(f"/api/v1/agents/{b_agent['id']}", headers=h,
-                        json={"name": "hacked"}).status_code == 403
-    assert client.delete(f"/api/v1/agents/{b_agent['id']}", headers=h).status_code == 403
+    patched = client.patch(f"/api/v1/agents/{b_agent['id']}", headers=h,
+                           json={"name": "hacked"})
+    assert patched.status_code == 403
+    db.expire_all()
     assert db.get(Agent, b_agent["id"]).name == "Agent B"
+    deleted = client.delete(f"/api/v1/agents/{b_agent['id']}", headers=h)
+    assert deleted.status_code == 403
+    db.expire_all()
+    assert db.get(Agent, b_agent["id"]).name == "Agent B"
+    assert client.get(f"/api/v1/agents/{b_agent['id']}", headers=h).status_code == 404
 
 
 def test_client_cannot_create_agent_even_with_forged_client_id(client, tenants):
     resp = client.post("/api/v1/agents", headers=auth_headers(tenants["a"]["token"]),
                        json={"name": "New", "client_id": tenants["b"]["client_id"]})
     assert resp.status_code == 403
+    tenant_a_agents = client.get(
+        "/api/v1/agents", headers=auth_headers(tenants["a"]["token"])
+    ).json()["data"]
+    tenant_b_agents = client.get(
+        "/api/v1/agents", headers=auth_headers(tenants["b"]["token"])
+    ).json()["data"]
+    assert tenant_a_agents == []
+    assert tenant_b_agents == []
+
+
+def test_admin_agent_creation_uses_path_tenant_not_body(client, tenants):
+    from tests.helpers import super_admin_headers
+
+    resp = client.post(
+        f"/api/v1/admin/clients/{tenants['a']['client_id']}/agents",
+        headers=super_admin_headers(client),
+        json={"name": "New", "client_id": tenants["b"]["client_id"]},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["data"]["client_id"] == tenants["a"]["client_id"]
+    assert len(client.get(
+        "/api/v1/agents", headers=auth_headers(tenants["a"]["token"])
+    ).json()["data"]) == 1
+    assert client.get(
+        "/api/v1/agents", headers=auth_headers(tenants["b"]["token"])
+    ).json()["data"] == []
 
 
 def test_only_super_admin_can_list_a_clients_agents(client, tenants):
