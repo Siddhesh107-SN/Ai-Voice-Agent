@@ -304,3 +304,41 @@ The complete `PUBLIC_ROUTES` set now contains:
 - No dependencies or environment variables were added or changed. Plan prices, included minutes, and Sarvam response shapes/status codes are unchanged.
 - Local `pytest`, database startup, and migration execution were not run as requested. `python -m compileall app tests` is the only local validation; GitHub CI remains responsible for migration and test execution.
 - No frontend files were touched, and no push was performed.
+
+## Phase 2B LOGWATCH-UI
+
+### Change report
+
+- Branch: `phase-2`; base commit: `9a7a5cc26f92deee9f8c46153f620e25baea62ed`. The implementation is committed as `Phase 2B LOGWATCH-UI`; the resulting commit hash is included in the delivery message.
+- `ai-calling-frontend/src/features/dashboard/types.ts` — added typed webhook event, tool-call, all-client appointment, monitoring, health, and paginated result models matching the admin API fields.
+- `ai-calling-frontend/src/features/dashboard/api.ts` — added six admin API adapters; retained pagination metadata, added nested payload sanitization, and added mock paging/filtering; live tenant appointment fetches now request `order=desc`.
+- `ai-calling-frontend/src/lib/http.ts` — added opt-in envelope preservation for paginated admin responses; existing callers still unwrap responses by default.
+- `ai-calling-frontend/src/features/dashboard/mock.ts` — added realistic sanitized logwatch samples, including unknown-agent and slot-conflict failures, near/over-limit clients, and enough list rows to exercise pagination.
+- `ai-calling-frontend/src/features/dashboard/views-logwatch.tsx` — added the four role-guarded, lazy-fetch platform views, filters, pagination, retries/empty/error states, sanitized event detail modal, copy controls, health panel, and attention indicators.
+- `ai-calling-frontend/src/features/dashboard/shell.tsx` — added four platform-only navigation links.
+- `ai-calling-frontend/src/features/dashboard/dashboard.css` — added responsive horizontal table scrolling and styles for the new filters, health panel, modal payload, and attention rows.
+- `ai-calling-frontend/src/app/dashboard/platform/monitoring/page.tsx` — registered the Monitoring screen under the platform route tree.
+- `ai-calling-frontend/src/app/dashboard/platform/webhook-events/page.tsx` — registered the Webhook events screen under the platform route tree.
+- `ai-calling-frontend/src/app/dashboard/platform/tool-calls/page.tsx` — registered the Tool calls screen under the platform route tree.
+- `ai-calling-frontend/src/app/dashboard/platform/appointments/page.tsx` — registered the cross-client appointments screen under the platform route tree.
+- `CHANGELOG_PHASES.md` — recorded the Phase 2B implementation, verification limitation, and mock-mode test steps.
+
+### Database, API, and behavior
+
+- Database changes: none. No backend file changed.
+- New calls, made only when the corresponding screen opens: `GET /api/v1/admin/monitoring` and `GET /api/v1/admin/health/details` on Monitoring; `GET /api/v1/admin/webhook-events` on Webhook events and `GET /api/v1/admin/webhook-events/{id}` only when an event is opened; `GET /api/v1/admin/tool-calls` on Tool calls; `GET /api/v1/admin/appointments` on All appointments. Each list sends its supported filters plus `page` and `limit`. These calls are not added to dashboard initialization.
+- Existing live appointment reads used by initial dashboard loading and polling now call `GET /api/v1/appointments?limit=100&order=desc`. Mock appointment behavior is unchanged. No other existing response shape changed.
+- Platform navigation is shown only to the super-admin role; the existing platform route middleware remains in place, and the new views do not fetch or render data for other roles. API adapters also enforce the frontend role check outside mock mode.
+- Payload display recursively removes keys containing `token`, `secret`, `password`, `authorization`, `api_key`, or `signature`, and masks phone-like values to their last four digits. No log records are stored in localStorage. Health displays configuration presence booleans and the email backend name, not configuration values.
+- Environment variables and configuration: none added or changed. Mock behavior uses the existing `NEXT_PUBLIC_API_MODE=mock`.
+- No new automated tests were added in this frontend phase.
+
+### Build and manual mock checks
+
+- Build command from `ai-calling-frontend`: `npm run build`. It could not complete because the local frontend dependencies are absent: `next` is not recognized as a command and `ai-calling-frontend/node_modules/.bin/next` does not exist. No packages were installed, as requested. `git diff --check` passed.
+- Manual mock-mode check: in PowerShell, run `Set-Location C:\dev\talkaor-u2\ai-calling-frontend`, set `$env:NEXT_PUBLIC_API_MODE='mock'` and `$env:NEXT_PUBLIC_DASH_SIMULATE='1'`, then run `npm run dev`. In the super-admin dashboard use the new sidebar links or open `/dashboard/platform/monitoring`, `/dashboard/platform/webhook-events`, `/dashboard/platform/tool-calls`, and `/dashboard/platform/appointments`.
+- Monitoring: verify all four client cards, especially Kale Wellness Studio near its limit and Patil Auto Care over its limit; check the health presence badges.
+- Webhook events: filter status `failed`, client ID `2`, event type `call.completed`, and date `2026-10-24`; open the event row to inspect/copy the sanitized payload. Also clear the client filter and inspect the unknown-agent failure; try Next to exercise pagination.
+- Tool calls: filter client ID `2` and outcome `Failure` to see the slot conflict; clear the client filter to see an unresolved-client failure. Copy a request ID and try Next.
+- All appointments: filter client ID `2`, source `manual`, and date `2026-10-24` through `2026-10-30`; verify AI-agent/manual badges and newest-created ordering, then try Next.
+- In the development role switcher, select Staff or Admin and confirm the platform links disappear and platform URLs redirect away. The build remains unverified until dependencies are available in CI or another configured environment.

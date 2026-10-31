@@ -109,6 +109,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     ['/dashboard/platform/messages', 'Messages', 'mail', `${s.messages.filter((m) => !m.read).length} new`],
     ['/dashboard/platform/api', 'API / Swagger', 'code', ''],
     ['/dashboard/platform/logs', 'Logs', 'list', ''],
+    ['/dashboard/platform/monitoring', 'Monitoring', 'pulse', ''],
+    ['/dashboard/platform/webhook-events', 'Webhook events', 'list', ''],
+    ['/dashboard/platform/tool-calls', 'Tool calls', 'code', ''],
+    ['/dashboard/platform/appointments', 'All appointments', 'cal', ''],
   ];
 
   const items = isSA ? platform : tenant;

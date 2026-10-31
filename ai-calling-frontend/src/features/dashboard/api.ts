@@ -9,6 +9,13 @@ import type {
   LogEntry,
   MockData,
   Plan,
+  AdminAppointment,
+  AdminHealthDetails,
+  AdminMonitoringRow,
+  AdminPage,
+  AdminToolCall,
+  AdminWebhookEvent,
+  AdminWebhookEventDetail,
 } from './types';
 import { http, setElevationToken, getUserRole } from '@/lib/http';
 
@@ -176,7 +183,7 @@ export async function fetchInitialDashboardData(): Promise<MockData> {
   const isSuperAdmin = role === 'super_admin';
 
   // Base endpoints for active client member / admin
-  const apptsPromise = http<any[]>('/api/v1/appointments?limit=100');
+  const apptsPromise = http<any[]>('/api/v1/appointments?limit=100&order=desc');
   const agentsPromise = isSuperAdmin
     ? http<any[]>('/api/v1/admin/agents')
     : http<any[]>('/api/v1/agents');
@@ -262,7 +269,7 @@ export async function fetchAppointments(): Promise<Appointment[]> {
     return structuredClone(mock.appts);
   }
 
-  const rawAppts = await http<any[]>('/api/v1/appointments?limit=100');
+  const rawAppts = await http<any[]>('/api/v1/appointments?limit=100&order=desc');
   return (rawAppts || []).map(adaptAppointment);
 }
 
@@ -601,6 +608,191 @@ export async function fetchLogs(): Promise<LogEntry[]> {
     return MOCK.logs;
   }
   return http<LogEntry[]>('/api/v1/admin/logs');
+}
+
+export interface AdminListFilters {
+  page?: number;
+  limit?: number;
+  client_id?: number;
+  status?: string;
+  event_type?: string;
+  tool?: string;
+  success?: boolean;
+  source?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+interface ApiPaginated<T> {
+  success: boolean;
+  data: T[];
+  pagination: { page: number; limit: number; total: number };
+}
+
+function assertAdminAccess(): void {
+  if (!isMockMode() && getUserRole() !== 'super_admin') {
+    throw new Error('Super Admin access is required.');
+  }
+}
+
+function buildAdminQuery(filters: AdminListFilters): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== '') query.set(key, String(value));
+  }
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : '';
+}
+
+function pageResult<T>(items: T[], filters: AdminListFilters, total = items.length): AdminPage<T> {
+  return {
+    items,
+    page: filters.page ?? 1,
+    limit: filters.limit ?? 10,
+    total,
+  };
+}
+
+function localDate(value: string): string {
+  return value.slice(0, 10);
+}
+
+function sanitizeWebhookPayload(payload: unknown): Record<string, unknown> {
+  const sanitized = sanitizeWebhookValue(payload);
+  return sanitized && typeof sanitized === 'object' && !Array.isArray(sanitized)
+    ? sanitized as Record<string, unknown>
+    : {};
+}
+
+function sanitizeWebhookValue(value: unknown, key = ''): unknown {
+  if (Array.isArray(value)) return value.map((item) => sanitizeWebhookValue(item, key));
+  if (value && typeof value === 'object') {
+    const sanitized: Record<string, unknown> = {};
+    for (const [childKey, childValue] of Object.entries(value)) {
+      if (!/token|secret|password|authorization|api_key|signature/i.test(childKey)) {
+        sanitized[childKey] = sanitizeWebhookValue(childValue, childKey);
+      }
+    }
+    return sanitized;
+  }
+  if (typeof value === 'number' && /phone|mobile|telephone|tel/i.test(key)) {
+    return `******${String(value).replace(/\D/g, '').slice(-4)}`;
+  }
+  if (typeof value !== 'string') return value;
+  if (/phone|mobile|telephone|tel/i.test(key)) {
+    const digits = value.replace(/\D/g, '');
+    return `******${digits.slice(-4)}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(value)) return value;
+  return value.replace(/(?:\+?\d[\d\s().-]{5,}\d)/g, (phone) => {
+    const digits = phone.replace(/\D/g, '');
+    return digits.length >= 7 && digits.length <= 15 ? `******${digits.slice(-4)}` : phone;
+  });
+}
+
+export async function fetchAdminWebhookEvents(
+  filters: AdminListFilters = {},
+): Promise<AdminPage<AdminWebhookEvent>> {
+  assertAdminAccess();
+  if (isMockMode()) {
+    const { MOCK_LOGWATCH } = await import('./mock');
+    let rows = structuredClone(MOCK_LOGWATCH.webhookEvents);
+    if (filters.client_id !== undefined) rows = rows.filter((row) => row.client_id === filters.client_id);
+    if (filters.status) rows = rows.filter((row) => row.status === filters.status);
+    if (filters.event_type) rows = rows.filter((row) => row.event_type === filters.event_type);
+    if (filters.date_from) rows = rows.filter((row) => localDate(row.created_at) >= filters.date_from!);
+    if (filters.date_to) rows = rows.filter((row) => localDate(row.created_at) <= filters.date_to!);
+    return mockPage(rows, filters);
+  }
+  return fetchAdminPage<AdminWebhookEvent>('/api/v1/admin/webhook-events', filters);
+}
+
+export async function fetchAdminWebhookEvent(id: number): Promise<AdminWebhookEventDetail> {
+  assertAdminAccess();
+  if (isMockMode()) {
+    const { MOCK_LOGWATCH } = await import('./mock');
+    const row = MOCK_LOGWATCH.webhookEventDetails[id];
+    if (!row) throw new Error('Webhook event not found.');
+    return { ...structuredClone(row), payload: sanitizeWebhookPayload(row.payload) };
+  }
+  const event = await http<AdminWebhookEventDetail>(`/api/v1/admin/webhook-events/${encodeURIComponent(id)}`);
+  return { ...event, payload: sanitizeWebhookPayload(event.payload) };
+}
+
+export async function fetchAdminToolCalls(
+  filters: AdminListFilters = {},
+): Promise<AdminPage<AdminToolCall>> {
+  assertAdminAccess();
+  if (isMockMode()) {
+    const { MOCK_LOGWATCH } = await import('./mock');
+    let rows = structuredClone(MOCK_LOGWATCH.toolCalls);
+    if (filters.client_id !== undefined) rows = rows.filter((row) => row.client_id === filters.client_id);
+    if (filters.tool) rows = rows.filter((row) => row.tool === filters.tool);
+    if (filters.success !== undefined) rows = rows.filter((row) => row.success === filters.success);
+    if (filters.date_from) rows = rows.filter((row) => localDate(row.created_at) >= filters.date_from!);
+    if (filters.date_to) rows = rows.filter((row) => localDate(row.created_at) <= filters.date_to!);
+    return mockPage(rows, filters);
+  }
+  return fetchAdminPage<AdminToolCall>('/api/v1/admin/tool-calls', filters);
+}
+
+export async function fetchAdminAppointments(
+  filters: AdminListFilters = {},
+): Promise<AdminPage<AdminAppointment>> {
+  assertAdminAccess();
+  if (isMockMode()) {
+    const { MOCK_LOGWATCH } = await import('./mock');
+    let rows = structuredClone(MOCK_LOGWATCH.appointments);
+    if (filters.client_id !== undefined) rows = rows.filter((row) => row.client_id === filters.client_id);
+    if (filters.status) rows = rows.filter((row) => row.status === filters.status);
+    if (filters.source) rows = rows.filter((row) => row.source === filters.source);
+    if (filters.date_from) rows = rows.filter((row) => row.date >= filters.date_from!);
+    if (filters.date_to) rows = rows.filter((row) => row.date <= filters.date_to!);
+    return mockPage(rows, filters);
+  }
+  return fetchAdminPage<AdminAppointment>('/api/v1/admin/appointments', filters);
+}
+
+export async function fetchAdminMonitoring(
+  filters: Pick<AdminListFilters, 'page' | 'limit'> = {},
+): Promise<AdminPage<AdminMonitoringRow>> {
+  assertAdminAccess();
+  if (isMockMode()) {
+    const { MOCK_LOGWATCH } = await import('./mock');
+    return mockPage(structuredClone(MOCK_LOGWATCH.monitoring), filters);
+  }
+  return fetchAdminPage<AdminMonitoringRow>('/api/v1/admin/monitoring', filters);
+}
+
+export async function fetchAdminHealthDetails(): Promise<AdminHealthDetails> {
+  assertAdminAccess();
+  if (isMockMode()) {
+    const { MOCK_LOGWATCH } = await import('./mock');
+    return structuredClone(MOCK_LOGWATCH.health);
+  }
+  return http<AdminHealthDetails>('/api/v1/admin/health/details');
+}
+
+function mockPage<T>(rows: T[], filters: AdminListFilters): AdminPage<T> {
+  const page = filters.page ?? 1;
+  const limit = filters.limit ?? 10;
+  const start = (page - 1) * limit;
+  return pageResult(rows.slice(start, start + limit), filters, rows.length);
+}
+
+async function fetchAdminPage<T>(
+  path: string, filters: AdminListFilters,
+): Promise<AdminPage<T>> {
+  const response = await http<ApiPaginated<T>>(
+    `${path}${buildAdminQuery({ page: 1, limit: 10, ...filters })}`,
+    { unwrapResponse: false },
+  );
+  return {
+    items: response.data,
+    page: response.pagination.page,
+    limit: response.pagination.limit,
+    total: response.pagination.total,
+  };
 }
 
 // ---------------- STAFF ADMIN PIN ----------------
