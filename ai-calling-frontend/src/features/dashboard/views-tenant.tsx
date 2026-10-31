@@ -5,10 +5,10 @@ import { useDash } from './store';
 import { BotMark, Icon } from './icons';
 import { CalendarCard, DayRoster } from './calendar';
 import { ApptForm } from './appointments';
-import { Chips, Dialog, Meter, PageHead, Player, Status, Toggle } from './ui';
+import { Chips, CopyButton, Dialog, Meter, PageHead, Player, Status, Toggle } from './ui';
 import { ACTIVE_STATUSES, DAYS, TENANT_ID, TODAY, WEEKLY, fmtDur, initials } from './util';
 import type { Call } from './types';
-import { toggleAgentPower, updateBusinessSettings, addMinutePack, fetchCallDetails } from './api';
+import { fetchBillingMe, toggleAgentPower, updateBusinessSettings, fetchCallDetails } from './api';
 
 export function ConfirmLogoutDialog() {
   const { closeModal, logout } = useDash();
@@ -99,58 +99,47 @@ export function PinDialog() {
 }
 
 export function PlanCard() {
-  const { s, toast, actor, reload } = useDash();
-  const b = s.businesses.find((x) => x.id === TENANT_ID) || s.businesses[0] || {
-    id: TENANT_ID,
-    name: 'Sunrise Dental Care',
-    plan: 'Growth' as const,
-    minutes_used: 186,
-    minutes_limit: 300,
-    renews_on: '24 Nov 2026',
-    status: 'Active' as const,
-    last_login: 'Today',
-    staff_pin: '',
-  };
-  const pct = Math.round((b.minutes_used / b.minutes_limit) * 100);
-  const is100 = pct >= 100;
-  const is80 = pct >= 80 && !is100;
+  const [billing, setBilling] = useState<Awaited<ReturnType<typeof fetchBillingMe>> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
 
-  const requestPack = async () => {
-    try {
-      await addMinutePack(b.id, 100, actor);
-      await reload();
-      toast('Minute pack requested and added successfully!');
-    } catch {
-      toast('Minute pack requested (support will review)');
-    }
-  };
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    fetchBillingMe()
+      .then((result) => { if (active) setBilling(result); })
+      .catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : 'Unable to load billing details.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [retry]);
 
+  if (loading) return <div className="card" role="status">Loading plan and minutes…</div>;
+  if (error || !billing) {
+    return <div className="card" role="alert"><h3>Your plan</h3><p>{error || 'Billing details are unavailable.'}</p><button onClick={() => setRetry((value) => value + 1)}>Retry</button></div>;
+  }
+
+  const atLimit = billing.alert === 'limit' || billing.usage_percent >= 100;
+  const warning = !atLimit && (billing.alert === 'warning' || billing.usage_percent >= 80);
+  const color = atLimit ? 'var(--bad)' : warning ? 'var(--warn)' : 'var(--blue)';
+  const renewalDate = billing.renews_on.slice(0, 10);
   return (
     <div className="card">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3>Your plan</h3>
-        <span className="st">{b.plan}</span>
+        <span className="st">{billing.plan}</span>
       </div>
-      <p className="mut" style={{ margin: '4px 0' }}>{b.plan} plan, billed monthly</p>
-      <Meter used={b.minutes_used} limit={b.minutes_limit} />
+      <p className="mut" style={{ margin: '4px 0' }}>{billing.plan} plan, billed {billing.billing_cycle}</p>
+      <Meter used={billing.minutes_used} limit={billing.minutes_limit} percent={billing.usage_percent} color={color} />
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <span className="mono">{b.minutes_used} / {b.minutes_limit} min</span>
-        <span className="mono">{pct}% used</span>
+        <span className="mono">{billing.minutes_remaining} of {billing.minutes_limit} minutes left</span>
+        <span className="mono">{billing.usage_percent}% used</span>
       </div>
-      {is100 && (
-        <div style={{ background: '#c23b3b22', color: 'var(--bad)', padding: '6px 10px', borderRadius: 8, marginTop: 8, fontSize: 12 }}>
-          ⚠️ 100% limit reached. AI agent calling may be paused.
-        </div>
-      )}
-      {is80 && (
-        <div style={{ background: '#c97a1222', color: 'var(--warn)', padding: '6px 10px', borderRadius: 8, marginTop: 8, fontSize: 12 }}>
-          ⚠️ Warning: 80% or more of your monthly minutes used.
-        </div>
-      )}
-      <p style={{ margin: '10px 0 6px' }}><b>Next renewal:</b> <span className="mono">{b.renews_on}</span></p>
-      <button className="pri" style={{ width: '100%', marginTop: 6 }} onClick={requestPack}>
-        Request minute pack
-      </button>
+      {atLimit && <p role="status" style={{ color: 'var(--bad)', margin: '8px 0 0' }}>Usage limit reached.</p>}
+      {warning && <p role="status" style={{ color: 'var(--warn)', margin: '8px 0 0' }}>Usage is at the warning level.</p>}
+      <p style={{ margin: '10px 0 6px' }}><b>Next renewal:</b> <span className="mono">{renewalDate}</span></p>
+      <p className="mut" style={{ margin: 0 }}>Each call is rounded up to a whole minute.</p>
     </div>
   );
 }
@@ -313,18 +302,6 @@ export function CancellationsView() {
   );
 }
 
-function AgentConfig({ id }: { id: string }) {
-  const { s, closeModal, toast, log } = useDash();
-  const a = s.agents.find((x) => x.id === id)!;
-  return (
-    <Dialog title={`Configure ${a.name}`} actions={<><button onClick={closeModal}>Close</button><button className="pri" onClick={() => { log(`${a.name} settings updated`); closeModal(); toast(`${a.name} updated`); }}>Save changes</button></>}>
-      <label>Languages<input defaultValue={a.languages} /></label>
-      <label>Phone number<input defaultValue={a.phone} /></label>
-      <label>Greeting<input defaultValue="Namaste, Sunrise Dental, how can I help?" /></label>
-      <label>Voice<select><option>Warm, female</option><option>Calm, male</option></select></label>
-    </Dialog>
-  );
-}
 export function AgentsView() {
   const { s, can, openModal, closeModal, toast, actor, reload } = useDash();
   const list = s.agents.filter((a) => a.business_id === TENANT_ID);
@@ -373,19 +350,23 @@ export function AgentsView() {
 
   return (
     <>
-      <PageHead title="AI voice agents" right={<button className="pri" onClick={() => toast('Extra agents come with the Business plan')}>Add agent</button>} />
+      <PageHead title="AI voice agents" sub="Your assigned phone number and agent availability." />
       <div className="grid4">
         {list.map((a) => (
           <div className="card" key={a.id}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><h3>{a.name}</h3><span className={`st ${a.online ? 'completed' : 'cancelled'}`}>{a.online ? 'Online' : 'Offline'}</span></div>
-            <p className="mut" style={{ margin: '4px 0' }}>{a.languages}</p><p className="mono" style={{ margin: '4px 0' }}>{a.phone}</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><h3>{a.name}</h3><span className={`st ${a.online ? 'completed' : 'cancelled'}`}>{a.online ? 'Active' : 'Inactive'}</span></div>
+            <p className="mut" style={{ margin: '4px 0' }}>{a.languages}</p>
+            {a.phone
+              ? <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '8px 0' }}><b className="mono" style={{ fontSize: 18 }}>{a.phone}</b><CopyButton value={a.phone} label="Copy number" /></div>
+              : <p className="mut" style={{ margin: '8px 0' }}>Your number will be assigned by Talkaor. Contact support if this takes long.</p>}
+            {a.phone && <p className="mut" style={{ margin: '0 0 8px' }}>This is the number your customers call.</p>}
             <p className="mut" style={{ margin: '0 0 12px' }}>{a.calls_today} calls today</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Toggle on={a.online} label={`Power ${a.name}`} onClick={() => click(a.id)} />
-              <button disabled={!can} onClick={() => openModal(<AgentConfig id={a.id} />)}>Configure</button>
             </div>
           </div>
         ))}
+        {list.length === 0 && <div className="card">Your number will be assigned by Talkaor. Contact support if this takes long.</div>}
       </div>
     </>
   );

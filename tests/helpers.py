@@ -137,9 +137,37 @@ def make_call(db, client_id: int, **kw):
 
 
 def create_agent(client: TestClient, token: str, name: str = "Zoya", **extra) -> dict:
-    resp = client.post("/api/v1/agents", headers=auth_headers(token), json={"name": name, **extra})
+    client_response = client.get("/api/v1/clients/me", headers=auth_headers(token))
+    assert client_response.status_code == 200, client_response.text
+    client_id = client_response.json()["data"]["id"]
+    resp = create_admin_agent(client, client_id, name=name, **extra)
     assert resp.status_code == 201, resp.text
     return resp.json()["data"]
+
+
+def super_admin_headers(client: TestClient) -> dict:
+    from sqlalchemy import select
+
+    from app.core.database import SessionLocal
+    from app.models.enums import UserRole
+    from app.models.user import User
+
+    email = "test-agentlink-superadmin@example.com"
+    with SessionLocal() as db:
+        if db.scalar(select(User).where(User.email == email)) is None:
+            make_user(db, None, UserRole.SUPER_ADMIN, email)
+    return auth_headers(login_token(client, email))
+
+
+def create_admin_agent(
+    client: TestClient, client_id: int, name: str = "Zoya", **extra,
+):
+    headers = super_admin_headers(client)
+    return client.post(
+        f"/api/v1/admin/clients/{client_id}/agents",
+        headers=headers,
+        json={"name": name, **extra},
+    )
 
 
 def webhook_body(**overrides) -> dict:
