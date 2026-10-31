@@ -67,9 +67,9 @@ def _tool_call(client, client_id: int, token: str, phone: str):
 
 
 def test_admin_agent_and_integration_routes_require_super_admin(client, db):
-    tenant = _client(client, "agentlink-admin@example.test", "AgentLink Client")
-    staff = create_staff(client, tenant["token"], "agentlink-staff@example.test")
-    staff_token = login_token(client, "agentlink-staff@example.test")
+    tenant = _client(client, "agentlink-admin@example.com", "AgentLink Client")
+    staff = create_staff(client, tenant["token"], "agentlink-staff@example.com")
+    staff_token = login_token(client, "agentlink-staff@example.com")
     agent_path = f"/api/v1/admin/clients/{tenant['id']}/agents"
     token_path = f"/api/v1/admin/clients/{tenant['id']}/tool-token"
     integration_path = f"/api/v1/admin/clients/{tenant['id']}/integration"
@@ -93,7 +93,7 @@ def test_admin_agent_and_integration_routes_require_super_admin(client, db):
         assert client.post(unlink_path, headers=headers).status_code == 403
 
     db.expire_all()
-    root = make_user(db, None, UserRole.SUPER_ADMIN, "agentlink-root@example.test")
+    root = make_user(db, None, UserRole.SUPER_ADMIN, "agentlink-root@example.com")
     root_headers = auth_headers(login_token(client, root.email))
     created = client.post(agent_path, headers=root_headers, json=agent_body)
     assert created.status_code == 201
@@ -124,8 +124,8 @@ def test_admin_agent_and_integration_routes_require_super_admin(client, db):
 
 
 def test_agent_phone_provider_uniqueness_and_validation(client):
-    tenant_a = _client(client, "agentlink-a@example.test", "Client A")
-    tenant_b = _client(client, "agentlink-b@example.test", "Client B")
+    tenant_a = _client(client, "agentlink-a@example.com", "Client A")
+    tenant_b = _client(client, "agentlink-b@example.com", "Client B")
     root = super_admin_headers(client)
     first = _create_agent(client, root, tenant_a["id"])
     assert first.status_code == 201, first.text
@@ -171,8 +171,8 @@ def test_agent_phone_provider_uniqueness_and_validation(client):
 
 
 def test_clients_only_read_agent_links_and_can_keep_status_toggle(client):
-    tenant_a = _client(client, "agentlink-read-a@example.test", "Client A")
-    tenant_b = _client(client, "agentlink-read-b@example.test", "Client B")
+    tenant_a = _client(client, "agentlink-read-a@example.com", "Client A")
+    tenant_b = _client(client, "agentlink-read-b@example.com", "Client B")
     root = super_admin_headers(client)
     own = _create_agent(client, root, tenant_a["id"], phone_number="+919876543210")
     other = _create_agent(
@@ -196,8 +196,8 @@ def test_clients_only_read_agent_links_and_can_keep_status_toggle(client):
         )
         assert response.status_code == 403
 
-    staff_data = create_staff(client, tenant_a["token"], "agentlink-read-staff@example.test")
-    staff_token = login_token(client, "agentlink-read-staff@example.test")
+    staff_data = create_staff(client, tenant_a["token"], "agentlink-read-staff@example.com")
+    staff_token = login_token(client, "agentlink-read-staff@example.com")
     staff_headers = auth_headers(staff_token)
     assert client.post("/api/v1/agents", headers=staff_headers,
                        json={"name": "Forbidden"}).status_code == 403
@@ -232,8 +232,8 @@ def test_clients_only_read_agent_links_and_can_keep_status_toggle(client):
 
 
 def test_client_tool_tokens_are_scoped_rotated_and_never_logged(client, db, caplog):
-    tenant_a = _client(client, "agentlink-token-a@example.test", "Client A")
-    tenant_b = _client(client, "agentlink-token-b@example.test", "Client B")
+    tenant_a = _client(client, "agentlink-token-a@example.com", "Client A")
+    tenant_b = _client(client, "agentlink-token-b@example.com", "Client B")
     root = super_admin_headers(client)
     caplog.set_level("WARNING")
 
@@ -294,7 +294,7 @@ def test_client_tool_tokens_are_scoped_rotated_and_never_logged(client, db, capl
 def test_legacy_shared_token_flag_logs_without_token_and_can_be_disabled(
     client, db, caplog, monkeypatch,
 ):
-    tenant = _client(client, "agentlink-legacy@example.test", "Legacy Client")
+    tenant = _client(client, "agentlink-legacy@example.com", "Legacy Client")
     token = get_settings().sarvam_webhook_secret
     assert token
     caplog.set_level("WARNING")

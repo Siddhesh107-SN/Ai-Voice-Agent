@@ -152,7 +152,7 @@ def super_admin_headers(client: TestClient) -> dict:
     from app.models.enums import UserRole
     from app.models.user import User
 
-    email = "test-agentlink-superadmin@platform.test"
+    email = "test-agentlink-superadmin@example.com"
     with SessionLocal() as db:
         if db.scalar(select(User).where(User.email == email)) is None:
             make_user(db, None, UserRole.SUPER_ADMIN, email)
