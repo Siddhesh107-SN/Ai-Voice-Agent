@@ -8,7 +8,7 @@ import { ApptForm } from './appointments';
 import { Chips, Dialog, Meter, PageHead, Player, Status, Toggle } from './ui';
 import { ACTIVE_STATUSES, DAYS, TENANT_ID, TODAY, WEEKLY, fmtDur, initials } from './util';
 import type { Call } from './types';
-import { toggleAgentPower, updateBusinessSettings, addMinutePack } from './api';
+import { toggleAgentPower, updateBusinessSettings, addMinutePack, fetchCallDetails } from './api';
 
 export function ConfirmLogoutDialog() {
   const { closeModal, logout } = useDash();
@@ -192,7 +192,7 @@ export function DashboardHome() {
             <h3>Call and booking volume</h3><small className="mut">Past 7 days. Blue: calls handled. Orange: appointments booked.</small>
             <div className="bars">{WEEKLY.map((b, i) => <div key={i} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}><div style={{ flex: 1 }}><i style={{ height: `${(b[0] / 9) * 100}%` }} /><i style={{ height: `${(b[1] / 9) * 100}%` }} /></div><span>{DAYS[i]}</span></div>)}</div>
           </div>
-          {first && <div className="card"><h3>Latest recording</h3><p style={{ margin: '6px 0' }}><b>{first.customer_name}</b> with {first.agent_name} <span className="st">{first.outcome}</span></p><p className="mut" style={{ margin: '0 0 8px' }}>{first.summary}</p><Player duration={first.duration_seconds} url={first.recording_url} /></div>}
+          {first && <div className="card"><h3>Latest recording</h3><p style={{ margin: '6px 0' }}><b>{first.customer_name}</b> with {first.agent_name} <span className="st">{first.outcome}</span></p><p className="mut" style={{ margin: '0 0 8px' }}>{first.summary}</p><button onClick={() => openModal(<CallDetails c={first} />)}>Open call details</button></div>}
         </div>
         <div className="rc">
           <div className="card">
@@ -228,11 +228,42 @@ export function CustomersView() {
   );
 }
 
-function Transcript({ c }: { c: Call }) {
+function CallDetails({ c }: { c: Call }) {
   const { closeModal } = useDash();
+  const [details, setDetails] = useState<Call>();
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    fetchCallDetails(c.id).then((result) => {
+      if (active) setDetails(result);
+    }).catch((err: unknown) => {
+      if (active) setError(err instanceof Error ? err.message : 'Could not load call details.');
+    });
+    return () => { active = false; };
+  }, [c.id]);
+
   return (
-    <Dialog title={`Transcript: ${c.customer_name}`} actions={<button onClick={closeModal}>Close</button>}>
-      <div style={{ display: 'grid', gap: 8 }}>{(c.transcript ?? []).map((l, i) => <div key={i} className="note"><b>{l.speaker}</b> <span className="mono mut">{l.time}</span><br />{l.text}</div>)}</div>
+    <Dialog title={`Call details: ${c.customer_name}`} actions={<button onClick={closeModal}>Close</button>}>
+      {!details && !error && <p className="mut">Loading call details…</p>}
+      {error && <p role="alert">{error}</p>}
+      {details && (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div className="note">
+            <Status value={details.status} /> {fmtDur(details.duration_seconds)}
+            {details.summary && <p>{details.summary}</p>}
+          </div>
+          {details.recording_url
+            ? <Player duration={details.duration_seconds} url={details.recording_url} />
+            : <p className="mut">{details.has_recording ? 'Recording link is unavailable.' : 'No recording is available.'}</p>}
+          <div style={{ display: 'grid', gap: 8 }}>
+            {(details.transcript ?? []).map((line, i) => (
+              <div key={i} className="note"><b>{line.speaker}</b> <span className="mono mut">{line.time}</span><br />{line.text}</div>
+            ))}
+            {!details.transcript?.length && <p className="mut">No transcript is available.</p>}
+          </div>
+        </div>
+      )}
     </Dialog>
   );
 }
@@ -253,8 +284,7 @@ export function CallsView() {
               <div><Status value={c.status} /> {c.outcome && <span className="st">{c.outcome}</span>} <span className="mono">{fmtDur(c.duration_seconds)}</span></div>
             </div>
             <p className="mut" style={{ margin: '6px 0' }}>{c.summary}</p>
-            {c.has_recording && <Player duration={c.duration_seconds} url={c.recording_url} />}
-            {c.transcript && <button style={{ marginTop: 8 }} onClick={() => openModal(<Transcript c={c} />)}>View transcript</button>}
+            <button style={{ marginTop: 8 }} onClick={() => openModal(<CallDetails c={c} />)}>Open call details</button>
           </div>
         ))}
         {list.length === 0 && <div className="card">No calls match this filter.</div>}

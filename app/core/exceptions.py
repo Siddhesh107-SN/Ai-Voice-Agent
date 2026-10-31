@@ -170,7 +170,11 @@ class TransactionDuplicateError(AppError):
     message = "Transaction ID already submitted"
 
     def __init__(self, message: str = "Transaction ID already submitted") -> None:
-        self.custom_body = {"detail": message, "code": "TRANSACTION_DUPLICATE"}
+        self.custom_body = {
+            "success": False,
+            "message": message,
+            "error_code": "TRANSACTION_DUPLICATE",
+        }
         super().__init__(message, error_code="TRANSACTION_DUPLICATE")
 
 

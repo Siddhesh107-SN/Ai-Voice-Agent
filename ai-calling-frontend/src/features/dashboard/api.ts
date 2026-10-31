@@ -72,6 +72,12 @@ function adaptAppointment(b: any): Appointment {
 }
 
 function adaptCall(b: any): Call {
+  const transcript = Array.isArray(b.transcript)
+    ? b.transcript
+    : typeof b.transcript === 'string' && b.transcript.trim()
+      ? [{ speaker: 'Transcript', text: b.transcript, time: '' }]
+      : undefined;
+
   return {
     id: String(b.id),
     customer_name: b.customer?.name || b.customer_name || 'Customer',
@@ -83,7 +89,7 @@ function adaptCall(b: any): Call {
     summary: b.summary || undefined,
     has_recording: Boolean(b.has_recording),
     recording_url: b.recording_url || undefined,
-    transcript: Array.isArray(b.transcript) ? b.transcript : undefined,
+    transcript,
   };
 }
 
@@ -282,8 +288,13 @@ export async function createAppointment(payload: Partial<Appointment> & { actor?
     return newAppt;
   }
 
+  const customerId = Number(payload.customer_id);
+  if (!Number.isSafeInteger(customerId) || customerId <= 0) {
+    throw new Error('Select a valid customer before booking the appointment.');
+  }
+
   const body = {
-    customer_id: Number(payload.customer_id) || 1,
+    customer_id: customerId,
     appointment_date: payload.date,
     appointment_time: payload.time ? payload.time.slice(0, 5) : '10:00',
     status: payload.status || 'scheduled',
@@ -381,6 +392,18 @@ export async function fetchCalls(): Promise<Call[]> {
   return (res || []).map(adaptCall);
 }
 
+export async function fetchCallDetails(id: string): Promise<Call> {
+  if (isMockMode()) {
+    const MOCK = await loadMockData();
+    const call = MOCK.calls.find((item) => item.id === id);
+    if (!call) throw new Error('Call details not found.');
+    return call;
+  }
+
+  const res = await http<any>(`/api/v1/calls/${encodeURIComponent(id)}`);
+  return adaptCall(res);
+}
+
 export async function fetchAgents(): Promise<Agent[]> {
   if (isMockMode()) {
     const MOCK = await loadMockData();
@@ -475,17 +498,21 @@ export async function updateBusinessStatus(id: string, status: 'Active' | 'Suspe
   });
 }
 
-export async function addMinutePack(id: string, minutes: number = 100, actor?: string): Promise<Business> {
+export async function addMinutePack(
+  id: string,
+  minutes: number = 100,
+  actor?: string
+): Promise<{ success: boolean; minutes_added: number; client_id: string | number }> {
   if (isMockMode()) {
     const MOCK = await loadMockData();
     const biz = MOCK.businesses.find((b) => b.id === id) || MOCK.businesses[0];
-    return { ...biz, minutes_limit: biz.minutes_limit + minutes };
+    biz.minutes_limit += minutes;
+    return { success: true, minutes_added: minutes, client_id: id };
   }
-  const res = await http<any>(`/api/v1/admin/businesses/${id}/minute-pack`, {
+  return http<{ success: boolean; minutes_added: number; client_id: string | number }>(`/api/v1/admin/businesses/${id}/minute-pack`, {
     method: 'POST',
     body: JSON.stringify({ minutes, actor }),
   });
-  return adaptBusiness(res);
 }
 
 export async function viewBusinessPin(id: string, actor?: string): Promise<{ pin: string; changedAt: string }> {
@@ -519,17 +546,23 @@ export async function fetchAccessRequests(): Promise<AccessRequest[]> {
   return (res || []).map(adaptAccessRequest);
 }
 
-export async function approveAccess(id: string, actor?: string): Promise<Business> {
+export async function approveAccess(
+  id: string,
+  actor?: string
+): Promise<{ id: string; business: string; status: string; reason?: string }> {
   if (isMockMode()) {
     const MOCK = await loadMockData();
-    const biz = MOCK.businesses.find((b) => b.id === id) || MOCK.businesses[0];
-    return { ...biz, status: 'Active' };
+    const request = MOCK.requests.find((item) => item.id === id);
+    if (request) request.status = 'Active';
+    const business = request?.business || 'Business';
+    const biz = MOCK.businesses.find((item) => item.name === business);
+    if (biz) biz.status = 'Active';
+    return { id, business, status: 'active', reason: 'Access approved' };
   }
-  const res = await http<any>(`/api/v1/admin/access/${id}/approve`, {
+  return http<{ id: string; business: string; status: string; reason?: string }>(`/api/v1/admin/access/${id}/approve`, {
     method: 'POST',
     body: JSON.stringify({ actor }),
   });
-  return adaptBusiness(res);
 }
 
 export async function declineAccess(id: string, reason = 'Payment declined', actor?: string): Promise<void> {

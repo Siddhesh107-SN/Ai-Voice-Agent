@@ -15,6 +15,7 @@ from sqlalchemy import text  # noqa: E402
 import app.models  # noqa: E402,F401
 from app.core.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import create_app  # noqa: E402
+from tests.helpers import seed_default_plans  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -26,11 +27,18 @@ def _schema():
 
 
 @pytest.fixture(autouse=True)
-def _clean_tables():
+def _clean_tables(_schema):
+    with SessionLocal() as session:
+        seed_default_plans(session)
+
     yield
+
     with engine.begin() as conn:
         names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
         conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+
+    with SessionLocal() as session:
+        seed_default_plans(session)
 
 
 @pytest.fixture
