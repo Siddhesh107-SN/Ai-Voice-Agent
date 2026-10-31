@@ -8,7 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Path, Request
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.core.dependencies import DbSession
-from app.core.exceptions import NotFoundError, UnprocessableError
+from app.core.exceptions import AppError, NotFoundError, UnprocessableError
 from app.integrations.sarvam.schemas import SarvamAppointmentRequest, SarvamOutboundPayload
 from app.models.client import Client
 from app.schemas.appointment import AppointmentOut
@@ -48,9 +48,19 @@ def _logged_tool_call(request: Request, db: DbSession, client_id: int, tool: str
     started = perf_counter()
     try:
         if db.get(Client, client_id) is None:
-            raise RuntimeError("Internal server error")
+            raise NotFoundError("Not found")
         result = operation()
+    except AppError as exc:
+        _safe_record_tool_call(
+            client_id=client_id, tool=tool, success=False,
+            error_code=exc.error_code, message=exc.message,
+            appointment_id=appointment_id,
+            duration_ms=round((perf_counter() - started) * 1000),
+            request_id=safe_request_id(request, token),
+        )
+        raise
     except Exception as exc:
+        logger.exception("Unexpected Sarvam tool operation failure")
         _safe_record_tool_call(
             client_id=client_id, tool=tool, success=False,
             error_code=getattr(exc, "error_code", "INTERNAL_ERROR"),

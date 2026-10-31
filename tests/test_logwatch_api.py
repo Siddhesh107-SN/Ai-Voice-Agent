@@ -95,7 +95,7 @@ def test_all_logwatch_routes_enforce_super_admin_authentication(
     for path in paths:
         assert client.get(path).status_code == 401
         assert client.get(path, headers=auth_headers(watch_tenants["a"]["token"])).status_code == 403
-        assert client.get(path, headers=auth_headers(watch_tenants["a"]["staff_token"])).status_code == 403
+        assert client.get(path, headers=auth_headers(watch_tenants["staff_token"])).status_code == 403
         assert client.get(path, headers=auth_headers(watch_tenants["root_token"])).status_code == 200
 
 
@@ -304,7 +304,8 @@ def test_unknown_client_failure_uses_shared_null_tenant_log_bucket(
             "appointment_date": "2032-05-01", "appointment_time": "11:00",
         },
     )
-    assert response.status_code == 500
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "NOT_FOUND"
     log = db.scalar(select(AuditLog).where(AuditLog.action == "sarvam_tool.book"))
     assert log is not None and log.client_id is None
     assert log.details["requested_client_id"] == 999999
@@ -321,7 +322,8 @@ def test_unknown_client_tool_audits_share_the_cap(client, db, monkeypatch):
     }
     first = client.post(_tool_url(999991, "book"), json=payload)
     second = client.post(_tool_url(999992, "book"), json=payload)
-    assert first.status_code == second.status_code == 500
+    assert first.status_code == second.status_code == 404
+    assert first.json() == second.json()
     logs = db.scalars(select(AuditLog).where(AuditLog.action == "sarvam_tool.book")).all()
     assert len(logs) == 1
     assert logs[0].client_id is None
