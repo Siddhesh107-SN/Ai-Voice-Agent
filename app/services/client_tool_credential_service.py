@@ -33,6 +33,25 @@ def _tool_url(base: str, client_id: int, token: str, action: str) -> str:
     )
 
 
+def _header_tool_url(base: str, client_id: int, action: str) -> str:
+    return (
+        f"{base}/api/v1/webhooks/sarvam/{client_id}"
+        f"/appointments/{action}"
+    )
+
+
+def _call_completed_url(base: str, client_id: int, token: str) -> str:
+    return f"{base}/api/v1/webhooks/sarvam/{token}/{client_id}/call-completed"
+
+
+def _call_completed_header_url(base: str, client_id: int) -> str:
+    return f"{base}/api/v1/webhooks/sarvam/{client_id}/call-completed"
+
+
+def _call_start_url(base: str, client_id: int) -> str:
+    return f"{base}/api/v1/webhooks/sarvam/{client_id}/call-start"
+
+
 class ClientToolCredentialService:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -82,6 +101,16 @@ class ClientToolCredentialService:
                 action: _tool_url(base, client_id, token, action)
                 for action in _TOOL_ACTIONS
             },
+            header_tool_urls={
+                action: _header_tool_url(base, client_id, action)
+                for action in _TOOL_ACTIONS
+            },
+            call_completed_url=_call_completed_url(base, client_id, token),
+            call_completed_header_url=_call_completed_header_url(base, client_id),
+            call_completed_header="X-Webhook-Token",
+            call_start_url=_call_start_url(base, client_id),
+            call_start_header="X-Tool-Token",
+            tool_token_header="X-Tool-Token",
             urls_are_absolute=absolute,
         )
 
@@ -108,6 +137,16 @@ class ClientToolCredentialService:
                 action: _tool_url(base, client_id, "{TOKEN}", action)
                 for action in _TOOL_ACTIONS
             },
+            header_tool_url_patterns={
+                action: _header_tool_url(base, client_id, action)
+                for action in _TOOL_ACTIONS
+            },
+            call_completed_url_pattern=_call_completed_url(base, client_id, "{TOKEN}"),
+            call_completed_header_url_pattern=_call_completed_header_url(base, client_id),
+            call_completed_header="X-Webhook-Token",
+            call_start_url_pattern=_call_start_url(base, client_id),
+            call_start_header="X-Tool-Token",
+            tool_token_header="X-Tool-Token",
             urls_are_absolute=absolute,
             credential_exists=credential is not None,
             credential_created_at=credential.created_at if credential else None,

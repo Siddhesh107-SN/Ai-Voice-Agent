@@ -444,3 +444,46 @@ The complete `PUBLIC_ROUTES` set now contains:
      6. Switch to Client Admin, open **AI Voice Agents**, verify the assigned number and copy button, the customer-call explanation, and the active status. Verify there are no Add, Configure, Edit, or Unlink controls; test the power toggle.
      7. On the client dashboard, verify the Growth plan, `114 of 300 minutes left`, renewal date, normal progress color, and rounded-up-minute note. Switch to Staff and verify the same read-only phone and billing details.
      8. In non-mock/live mode, verify the role switcher is absent for clients and directly opening a `/dashboard/platform/...` route shows the access-denied state and redirects.
+
+## Phase 4A SARVAMFIT
+
+### Change report
+
+- Branch: `phase-2`; base commit: `356127636303a70edb0de27400640fae911038ce`. Commit: this report is included in `Phase 4A SARVAMFIT`; the new hash is reported in the delivery message.
+- Files changed:
+  - `.env.example` — documents `OVERAGE_GRACE_PERCENT`, defaulting to 10.
+  - `app/api/routes/sarvam_webhooks.py` — adds header-authenticated tool and call-completion routes, call-start gate route, and preserves existing path-token and signed-webhook routes.
+  - `app/core/config.py` — adds the overage grace setting.
+  - `app/integrations/sarvam/schemas.py` — adds a lenient call-completion payload schema; unknown fields are ignored and an interaction or attempt ID is required.
+  - `app/schemas/agent_link.py` — extends integration and one-time-token responses with header-based tool, call-completed, and call-start URL/header fields.
+  - `app/services/client_tool_credential_service.py` — builds the new relative or absolute integration/setup URLs without persisting or logging raw tokens.
+  - `app/services/sarvam_call_service.py` — adds sanitized, idempotent call processing and the fail-open service gate.
+  - `app/services/tool_call_log_service.py` — adds capped warning audit records for unlinked agents and denied call starts.
+  - `tests/test_agentlink_api.py` — verifies the additional integration and one-time setup fields.
+  - `tests/test_multi_tenant_security.py` — allowlists the new token-authenticated public routes in the existing route-structure test.
+  - `tests/test_sarvam_call_completed.py` — covers authentication/scope, idempotency, payload redaction, call mapping, billing, and ignored/unlinked cases.
+  - `tests/test_sarvam_call_start.py` — covers plan grace, suspension/inactivity, header authentication, audit, and fail-open behavior.
+  - `tests/test_sarvam_public_webhooks.py` — covers header/Bearer tool authentication, tenant isolation, legacy-token rejection, and validation-failure auditing.
+  - `CHANGELOG_PHASES.md` — records this phase and its setup/verification notes.
+  - No files were deleted.
+
+### Database and API
+
+- Database changes: none. Existing `calls`, `webhook_events`, and `audit_logs` tables are reused; no migration was added.
+- `POST /api/v1/webhooks/sarvam/{token}/{client_id}/call-completed` accepts a client token in the path. The path token takes precedence; this new route accepts only per-client credentials and does not accept the legacy shared token.
+- `POST /api/v1/webhooks/sarvam/{client_id}/call-completed` accepts the per-client token in `X-Webhook-Token` or `Authorization: Bearer ...`; it also rejects the legacy shared token. Invalid credentials retain the existing 404 behavior and create no rows. Unusable payloads return HTTP 200 with `status: ignored`; successful and repeated deliveries return `processed` and `duplicate`.
+- The lenient callback schema accepts `app_id`, `interaction_id`, `attempt_id`, caller/dialed number fields, duration, completion/connectivity statuses, timestamps, transcript, variables, and metadata. Unknown fields—including any undeclared event type or recording URL—are ignored. `interaction_id` is the call's provider ID when present; `event_id` uses the interaction ID or, otherwise, attempt ID.
+- Calls are resolved only inside the authenticated client, first by provider agent ID and then by agent phone. Inbound/outbound direction and caller phone are mapped from the payload. Positive connected durations are rounded up to whole seconds and stored as billable completed calls. Failed or unconnected calls retain a non-completed status and null duration. Payloads stored in `webhook_events` are passed through the existing Phase 2A sanitizer. An unlinked agent does not prevent call storage and generates a capped warning audit entry containing its `app_id`.
+- Header-only `POST /api/v1/webhooks/sarvam/{client_id}/appointments/{check-slot|book|reschedule|cancel}` routes accept `X-Tool-Token` or Bearer credentials, are client-scoped, and reject the legacy shared token. Existing token-in-path appointment routes retain their prior behavior, including the configured legacy-token transition.
+- `POST /api/v1/webhooks/sarvam/{client_id}/call-start` accepts `X-Tool-Token` or Bearer credentials and returns `service_active`, `reason`, `business_name`, `plan`, and `minutes_remaining`. It uses `BillingService`'s current-period plan allowance and minute packs, blocks suspended/inactive clients and usage at or above the configured grace threshold, and returns `reason: ok` if an unexpected gate error occurs. Denials are audit-logged under the existing per-client cap; this endpoint does not create a call row.
+- New call-completed and call-start routes are limited to 30 requests per minute per IP; new header-based tool routes are limited to 60 per minute per IP.
+- `GET /api/v1/admin/clients/{client_id}/integration` now includes header-based tool URL patterns, call-completed path-token and header URL patterns, the call-completed/header names, and call-start URL/header fields. `POST /api/v1/admin/clients/{client_id}/tool-token` now returns both header-tool URLs and ready-to-use call-completed/call-start setup URLs and header names with the raw token. Existing super-admin authorization is unchanged.
+- The signed `POST /api/v1/webhooks/sarvam` route and its HMAC behavior were not changed. No Sarvam provider calls were made.
+
+### Configuration, tests, and remaining work
+
+- `OVERAGE_GRACE_PERCENT` defaults to 10; the gate blocks at 110% of included minutes plus current-period minute packs. `PUBLIC_API_BASE_URL` continues to control whether setup URLs are absolute; no secret values were added.
+- Setup: configure `PUBLIC_API_BASE_URL` to the public API origin, generate a per-client token from the super-admin token endpoint, and copy it directly into Sarvam. Use the header-tool URLs with `X-Tool-Token`; configure call-completed with either the one-time token-path URL or the header URL plus `X-Webhook-Token`. The call-start URL accepts `X-Tool-Token`. Once all clients have individual credentials, disable the legacy shared token on the server.
+- `python -m compileall app tests` passed. `git diff --check` passed. Pytest, database, Docker, and Alembic commands were not run; tests were added for CI.
+- No dependencies or frontend files changed.
+- Payload assumptions: `attempt_id` identifies outbound calls; callbacks with neither a usable caller number nor interaction/attempt ID are ignored. Both `from_number`/`to_number` and common caller/dialed aliases are accepted. `recording_url` is deliberately not inferred from the payload. The existing database has a global `(provider, event_id)` unique constraint; cross-tenant collisions are safely ignored rather than altering another tenant's webhook event.

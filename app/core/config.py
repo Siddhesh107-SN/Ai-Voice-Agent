@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     sarvam_webhook_secret: str = ""
     sarvam_legacy_shared_token_enabled: bool = True
     public_api_base_url: str = ""
+    overage_grace_percent: int = 10
 
     default_timezone: str = "Asia/Kolkata"
     cors_origins: str = ""

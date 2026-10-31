@@ -657,14 +657,21 @@ def _requires_auth(dependant) -> bool:
     return any(_requires_auth(d) for d in dependant.dependencies)
 
 
-# Webhooks authenticate via provider signature (see integrations/sarvam/webhook.py), not JWT.
+# Webhooks authenticate by provider signature or the documented per-client Sarvam token, not JWT.
 PUBLIC_ROUTES = {"/api/v1/health", "/api/v1/auth/register", "/api/v1/auth/login",
                  "/api/v1/auth/refresh", "/api/v1/webhooks/sarvam",
                  "/api/v1/webhooks/sarvam/{token}/outbound",
+                 "/api/v1/webhooks/sarvam/{token}/{client_id}/call-completed",
+                 "/api/v1/webhooks/sarvam/{client_id}/call-completed",
+                 "/api/v1/webhooks/sarvam/{client_id}/call-start",
                  "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/check-slot",
                  "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/book",
                  "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/reschedule",
-                 "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/cancel"}
+                 "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/cancel",
+                 "/api/v1/webhooks/sarvam/{client_id}/appointments/check-slot",
+                 "/api/v1/webhooks/sarvam/{client_id}/appointments/book",
+                 "/api/v1/webhooks/sarvam/{client_id}/appointments/reschedule",
+                 "/api/v1/webhooks/sarvam/{client_id}/appointments/cancel"}
 # Logout revokes the refresh token in its request body and intentionally has no access-token dependency.
 PUBLIC_ROUTES.add("/api/v1/auth/logout")
 # Forgot-password is public and rate-limited; the admin reset-password route remains super-admin-only.

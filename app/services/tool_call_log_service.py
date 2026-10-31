@@ -188,14 +188,80 @@ def record_tool_call(
         db.commit()
 
 
+def _record_sarvam_notice(
+    *,
+    client_id: int,
+    action: str,
+    message: str,
+    details: dict[str, Any],
+    request_id: str | None,
+) -> None:
+    with SessionLocal() as db:
+        now = datetime.now(timezone.utc)
+        if not _allowed_to_log(db, client_id, now):
+            db.rollback()
+            return
+        details["request_id"] = request_id[:255] if request_id else None
+        record_audit(
+            db,
+            action,
+            client_id=client_id,
+            details=details,
+            level="warning",
+            message=sanitize_payload(message)[:255],
+        )
+        db.commit()
+
+
+def record_unlinked_sarvam_call(
+    *, client_id: int, app_id: str | None, request_id: str | None,
+) -> None:
+    """Record an unlinked app warning under the existing capped tool-audit bucket."""
+    _record_sarvam_notice(
+        client_id=client_id,
+        action="sarvam_tool.call_unlinked_agent",
+        message="Call completed for an unlinked Sarvam agent",
+        details={
+            "tool": "call_completed",
+            "success": True,
+            "app_id": sanitize_payload(app_id[:255]) if app_id else None,
+        },
+        request_id=request_id,
+    )
+
+
+def record_call_start_denial(
+    *, client_id: int, reason: str, request_id: str | None,
+) -> None:
+    """Audit a blocked call start using the same per-minute cap as tool calls."""
+    _record_sarvam_notice(
+        client_id=client_id,
+        action="sarvam_tool.call_start",
+        message=f"Sarvam call start blocked: {reason}",
+        details={
+            "tool": "call_start",
+            "success": False,
+            "error_code": reason.upper(),
+        },
+        request_id=request_id,
+    )
+
+
 def log_tool_validation_failure(request) -> None:
     path = request.url.path
     match = re.search(
         r"/sarvam/([^/]+)/(\d+)/appointments/(check-slot|book|reschedule|cancel)$", path
     )
-    if not match:
-        return
-    token, raw_client_id, tool = match.groups()
+    if match:
+        token, raw_client_id, tool = match.groups()
+    else:
+        header_match = re.search(
+            r"/sarvam/(\d+)/appointments/(check-slot|book|reschedule|cancel)$", path
+        )
+        if not header_match or not getattr(request.state, "sarvam_tool_token_valid", False):
+            return
+        raw_client_id, tool = header_match.groups()
+        token = getattr(request.state, "sarvam_tool_auth_token", None)
     client_id = int(raw_client_id)
     try:
         with SessionLocal() as db:

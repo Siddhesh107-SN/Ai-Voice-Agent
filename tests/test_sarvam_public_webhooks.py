@@ -1,8 +1,14 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 
+from app.models.audit_log import AuditLog
 from app.models.call_attempt import CallAttempt
 from app.models.enums import AppointmentStatus
-from tests.helpers import make_appointment, make_customer, register_ok
+from tests.helpers import (
+    make_appointment,
+    make_customer,
+    register_ok,
+    super_admin_headers,
+)
 
 
 SECRET = "test-sarvam-webhook-secret"
@@ -21,6 +27,70 @@ def test_public_sarvam_routes_reject_wrong_token(client):
     response = client.post("/api/v1/webhooks/sarvam/wrong/outbound",
                            json={"attempt_id": "attempt-1", "status": "connected"})
     assert response.status_code == 404
+
+
+def test_header_authenticated_tool_routes_use_per_client_token_only(client, db):
+    _, client_id = _tenant(client, "header-tool@example.com")
+    root = super_admin_headers(client)
+    created = client.post(
+        f"/api/v1/admin/clients/{client_id}/tool-token",
+        headers=root,
+    )
+    assert created.status_code == 200
+    tool_token = created.json()["data"]["token"]
+    body = {
+        "customer_phone": "+919876543210",
+        "appointment_date": "2032-05-01",
+        "appointment_time": "10:00",
+    }
+
+    custom_header = client.post(
+        f"/api/v1/webhooks/sarvam/{client_id}/appointments/check-slot",
+        headers={"X-Tool-Token": tool_token},
+        json=body,
+    )
+    bearer = client.post(
+        f"/api/v1/webhooks/sarvam/{client_id}/appointments/check-slot",
+        headers={"Authorization": f"Bearer {tool_token}"},
+        json=body,
+    )
+    assert custom_header.status_code == bearer.status_code == 200
+    assert custom_header.json()["data"]["available"] is True
+    assert bearer.json()["data"]["available"] is True
+
+    invalid_body = client.post(
+        f"/api/v1/webhooks/sarvam/{client_id}/appointments/check-slot",
+        headers={"X-Tool-Token": tool_token},
+        json={"appointment_date": "2032-05-01", "appointment_time": "10:00"},
+    )
+    assert invalid_body.status_code == 422
+    validation_logs = db.scalars(
+        select(AuditLog).where(
+            AuditLog.client_id == client_id,
+            AuditLog.action == "sarvam_tool.check_slot",
+        )
+    ).all()
+    validation_log = next(
+        (row for row in validation_logs
+         if row.details.get("error_code") == "VALIDATION_ERROR"),
+        None,
+    )
+    assert validation_log is not None
+    assert tool_token not in str(validation_log.details)
+
+    audit_count = db.scalar(select(func.count(AuditLog.id)))
+    wrong_tenant = client.post(
+        f"/api/v1/webhooks/sarvam/{client_id + 1}/appointments/check-slot",
+        headers={"X-Tool-Token": tool_token},
+        json=body,
+    )
+    legacy = client.post(
+        f"/api/v1/webhooks/sarvam/{client_id}/appointments/check-slot",
+        headers={"X-Tool-Token": SECRET},
+        json=body,
+    )
+    assert wrong_tenant.status_code == legacy.status_code == 404
+    assert db.scalar(select(func.count(AuditLog.id))) == audit_count
 
 
 def test_outbound_connected_is_idempotent(client, db):

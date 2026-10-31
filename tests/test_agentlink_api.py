@@ -322,3 +322,47 @@ def test_legacy_shared_token_flag_logs_without_token_and_can_be_disabled(
     rejected = _tool_call(client, tenant["id"], token, "+919876543207")
     assert rejected.status_code == 404
     assert token not in caplog.text
+
+
+def test_integration_exposes_header_tool_call_start_and_completion_setup_urls(client):
+    tenant = _client(client, "agentlink-call-setup@example.com", "Setup Client")
+    root = super_admin_headers(client)
+    integration_response = client.get(
+        f"/api/v1/admin/clients/{tenant['id']}/integration",
+        headers=root,
+    )
+    assert integration_response.status_code == 200
+    integration = integration_response.json()["data"]
+    assert integration["tool_token_header"] == "X-Tool-Token"
+    assert integration["call_completed_header"] == "X-Webhook-Token"
+    assert integration["call_completed_url_pattern"].endswith(
+        f"/{{TOKEN}}/{tenant['id']}/call-completed"
+    )
+    assert integration["call_completed_header_url_pattern"].endswith(
+        f"/{tenant['id']}/call-completed"
+    )
+    assert integration["call_start_header"] == "X-Tool-Token"
+    assert integration["call_start_url_pattern"].endswith(
+        f"/{tenant['id']}/call-start"
+    )
+    assert integration["header_tool_url_patterns"]["book"].endswith(
+        f"/{tenant['id']}/appointments/book"
+    )
+
+    token_response = client.post(
+        f"/api/v1/admin/clients/{tenant['id']}/tool-token",
+        headers=root,
+    )
+    assert token_response.status_code == 200
+    token_data = token_response.json()["data"]
+    raw_token = token_data["token"]
+    assert token_data["call_completed_header"] == "X-Webhook-Token"
+    assert raw_token in token_data["call_completed_url"]
+    assert token_data["call_completed_header_url"].endswith(
+        f"/{tenant['id']}/call-completed"
+    )
+    assert token_data["call_start_header"] == "X-Tool-Token"
+    assert token_data["call_start_url"].endswith(
+        f"/{tenant['id']}/call-start"
+    )
+    assert raw_token not in token_data["header_tool_urls"]["book"]
