@@ -399,3 +399,48 @@ The complete `PUBLIC_ROUTES` set now contains:
 - Verification: `python -m compileall app tests` is a syntax-only check. Pytest and database commands were not run as requested; CI must run the full suite and migration checks.
 - No frontend files were changed. Existing dashboard calls `GET /api/v1/agents`, `GET /api/v1/admin/agents`, tenant `PATCH /api/v1/agents/{agent_id}` with only `status`, and super-admin `PATCH /api/v1/admin/agents/{agent_id}/power` remain compatible. Calls to tenant `POST /api/v1/agents`, `DELETE /api/v1/agents/{agent_id}`, or tenant PATCH with fields other than `status` now receive 403. No frontend agent-creation call was found during the prior review.
 - Potential operational issue: existing duplicate phone assignments are deterministically cleared except for the lowest-ID agent during upgrade; the originals are preserved for downgrade. Review these reassigned agents after deployment if their phone links need manual correction.
+
+## Phase 3B AGENTLINK-UI
+
+### CHANGE REPORT
+
+1. Branch: `phase-2`; base commit: `47ba8af08813af40c2cc5402bd1272c7ef193c5e`; new commit hash: reported in the delivery message. The commit hash cannot be embedded here because this report is part of that commit.
+2. Files changed:
+   - `ai-calling-frontend/src/features/dashboard/types.ts` — added client integration, one-time token, billing response, and extended agent types.
+   - `ai-calling-frontend/src/features/dashboard/api.ts` — added role-checked agent-link/integration/token/billing adapters, mock behavior, error mapping, and admin API guards.
+   - `ai-calling-frontend/src/features/dashboard/mock.ts` — added Sarvam agent metadata and mock client integration data.
+   - `ai-calling-frontend/src/features/dashboard/ui.tsx` — added reusable clipboard feedback and configurable billing progress bar.
+   - `ai-calling-frontend/src/features/dashboard/views-platform.tsx` — extended the existing platform Agents view with client integration, link/edit/unlink, and one-time token workflows.
+   - `ai-calling-frontend/src/features/dashboard/views-tenant.tsx` — shows assigned phone numbers and billing credit; removes tenant agent create/configure controls.
+   - `ai-calling-frontend/src/features/dashboard/shell.tsx` — blocks tenant access to platform routes and hides role switching outside mock mode.
+   - `CHANGELOG_PHASES.md` — recorded this Phase 3B report.
+   - No files were created or deleted.
+3. Database changes: none.
+4. API calls:
+   - `GET /api/v1/admin/agents` — loads the platform agent list; client integration data is fetched to fill in provider agent ID, status, and token-exists fields absent from the existing list response.
+   - `GET /api/v1/admin/clients/{client_id}/integration` — enriches agent rows and opens a client’s integration view.
+   - `POST /api/v1/admin/clients/{client_id}/agents` — links a Sarvam agent and E.164 phone number.
+   - `PATCH /api/v1/admin/agents/{agent_id}` — edits the linked agent name, provider agent ID, and phone.
+   - `POST /api/v1/admin/agents/{agent_id}/unlink` — deactivates an agent without deleting it.
+   - `POST /api/v1/admin/clients/{client_id}/tool-token` — generates or rotates the client token; its response is shown once and is not persisted.
+   - `GET /api/v1/billing/me` — loads the signed-in client’s plan, minutes, alert, and renewal date.
+   - Existing `GET /api/v1/agents` remains the tenant list call. Tenant power changes continue through `PATCH /api/v1/agents/{agent_id}` with only `{ "status": "active" | "inactive" }`; super-admin power changes continue through `PATCH /api/v1/admin/agents/{agent_id}/power`.
+   - Tenant agent creation/deletion and non-status edits are not called. No backend file changed.
+5. Environment/configuration changes: none.
+6. Behavior by role:
+   - Super admin: can link/edit/unlink Sarvam agents, copy phone numbers and integration URLs, and generate/rotate a client tool token. Rotation warns that the prior token stops working. Raw tokens and ready URLs exist only in the one-time view’s component state.
+   - Client admin: sees their assigned number/status and billing credit; can toggle agent power and cannot create, delete, or edit agent configuration. The prior minute-pack button was removed because it invoked a super-admin-only API.
+   - Client staff: sees the assigned number/status and billing credit; agent management controls for create/delete/edit are absent. Existing admin-session requirements for power changes remain.
+7. Build: not run; `ai-calling-frontend/node_modules` is absent. Dependencies were not installed, as requested.
+8. Assumptions and remaining items:
+   - The backend schemas provide every billing field used by the UI. The existing admin agent list omits provider agent ID and status, so the UI obtains these from the per-client integration response.
+   - The seeded mock billing sample is 62% used (normal state); warning and limit styling follows the response `alert` and `usage_percent` values.
+   - Exact mock-mode manual checks:
+     1. In PowerShell, run `Set-Location C:\dev\talkaor-u2\ai-calling-frontend`, `$env:NEXT_PUBLIC_API_MODE='mock'`, then `npm run dev` when dependencies are available. Sign in, then use the mock role switcher to choose Super Admin.
+     2. Open **AI agents (all)**. Link an agent to a client with a unique provider ID and phone such as `+919876543210`. Try provider ID `sarvam-sunrise-aria` and phone `+912040001101` to verify the duplicate messages; enter an invalid phone to verify inline E.164 validation.
+     3. Edit the new agent and confirm the name, provider ID, and phone update. Choose **Unlink**, verify the confirmation says it deactivates rather than deletes, then confirm the row remains with inactive status.
+     4. Open a client’s **Integration** view. Verify the relative-URL hint, signed event URL, four `{TOKEN}` patterns, credential status/timestamps, linked agent IDs/phones, copy buttons, and the legacy shared-token note.
+     5. Generate a token and confirm the warning. Copy the token and all four ready URLs, close the modal, reopen Integration, and verify the raw token is not shown again. Rotate it and verify the new one-time modal and warning.
+     6. Switch to Client Admin, open **AI Voice Agents**, verify the assigned number and copy button, the customer-call explanation, and the active status. Verify there are no Add, Configure, Edit, or Unlink controls; test the power toggle.
+     7. On the client dashboard, verify the Growth plan, `114 of 300 minutes left`, renewal date, normal progress color, and rounded-up-minute note. Switch to Staff and verify the same read-only phone and billing details.
+     8. In non-mock/live mode, verify the role switcher is absent for clients and directly opening a `/dashboard/platform/...` route shows the access-denied state and redirects.

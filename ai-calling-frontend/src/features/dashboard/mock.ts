@@ -1,5 +1,6 @@
 import type {
   AdminAppointment,
+  AdminClientIntegration,
   AdminHealthDetails,
   AdminMonitoringRow,
   AdminToolCall,
@@ -40,12 +41,12 @@ export const MOCK: MockData = {
     a5: [h('h8', 'a5', 'Booked by call', 'Aria', 'ai_agent'), h('h9', 'a5', 'Cancelled', 'Aria', 'ai_agent')],
   },
   agents: [
-    { id: 'g1', name: 'Aria', languages: 'English, Hindi', phone: '+91 20 4000 1101', online: true, calls_today: 42, business_id: 'b1' },
-    { id: 'g2', name: 'Veda', languages: 'Marathi, Hindi', phone: '+91 20 4000 1102', online: true, calls_today: 31, business_id: 'b1' },
-    { id: 'g3', name: 'Kiran', languages: 'English', phone: '+91 20 4000 1103', online: true, calls_today: 18, business_id: 'b1' },
-    { id: 'g4', name: 'Nila', languages: 'English', phone: '+91 20 4000 2101', online: true, calls_today: 21, business_id: 'b2' },
-    { id: 'g5', name: 'Arjun', languages: 'Marathi, Hindi', phone: '+91 20 4000 3101', online: true, calls_today: 17, business_id: 'b3' },
-    { id: 'g6', name: 'Isha', languages: 'English, Hindi', phone: '+91 20 4000 4101', online: false, calls_today: 0, business_id: 'b4' },
+    { id: 'g1', name: 'Aria', languages: 'English, Hindi', phone: '+91 20 4000 1101', online: true, calls_today: 42, business_id: 'b1', provider: 'sarvam', provider_agent_id: 'sarvam-sunrise-aria', status: 'active' },
+    { id: 'g2', name: 'Veda', languages: 'Marathi, Hindi', phone: '+91 20 4000 1102', online: true, calls_today: 31, business_id: 'b1', provider: 'sarvam', provider_agent_id: 'sarvam-sunrise-veda', status: 'active' },
+    { id: 'g3', name: 'Kiran', languages: 'English', phone: '+91 20 4000 1103', online: true, calls_today: 18, business_id: 'b1', provider: 'sarvam', provider_agent_id: 'sarvam-sunrise-kiran', status: 'active' },
+    { id: 'g4', name: 'Nila', languages: 'English', phone: '+91 20 4000 2101', online: true, calls_today: 21, business_id: 'b2', provider: 'sarvam', provider_agent_id: 'sarvam-kale-nila', status: 'active' },
+    { id: 'g5', name: 'Arjun', languages: 'Marathi, Hindi', phone: '+91 20 4000 3101', online: true, calls_today: 17, business_id: 'b3', provider: 'sarvam', provider_agent_id: 'sarvam-patil-arjun', status: 'active' },
+    { id: 'g6', name: 'Isha', languages: 'English, Hindi', phone: '+91 20 4000 4101', online: false, calls_today: 0, business_id: 'b4', provider: 'sarvam', provider_agent_id: 'sarvam-brightpath-isha', status: 'inactive' },
   ],
   calls: [
     { id: 'k1', customer_name: 'Ananya Deshmukh', customer_phone: '+91 98220 10001', agent_name: 'Aria', duration_seconds: 134, status: 'completed', outcome: 'BOOKED', summary: 'Booked a dental check-up for Monday morning.', has_recording: true,
@@ -92,6 +93,30 @@ export const MOCK: MockData = {
     { at: '24 Oct 14:50', text: 'Access request from BrightPath Coaching reviewed', level: 'info' },
     { at: '24 Oct 09:12', text: 'Sunrise Dental Care admin signed in', level: 'info' },
   ],
+};
+
+const mockIntegration = (clientId: string): AdminClientIntegration => ({
+  signed_event_webhook_url: '/api/v1/webhooks/sarvam',
+  tool_url_patterns: Object.fromEntries(
+    ['check-slot', 'book', 'reschedule', 'cancel'].map((action) => [
+      action,
+      `/api/v1/webhooks/sarvam/{TOKEN}/${clientId}/appointments/${action}`,
+    ]),
+  ),
+  urls_are_absolute: false,
+  credential_exists: false,
+  credential_created_at: null,
+  credential_rotated_at: null,
+  credential_last_used_at: null,
+  agents: [],
+});
+
+export const MOCK_CLIENT_INTEGRATIONS: Record<string, AdminClientIntegration> = {
+  b1: mockIntegration('b1'),
+  b2: mockIntegration('b2'),
+  b3: mockIntegration('b3'),
+  b4: mockIntegration('b4'),
+  b5: mockIntegration('b5'),
 };
 
 const webhookEvents: AdminWebhookEvent[] = [

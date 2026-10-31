@@ -21,7 +21,10 @@ export interface Call {
   status: 'completed' | 'missed' | 'failed' | 'in_progress'; outcome?: 'BOOKED' | 'INQUIRY';
   summary?: string; has_recording: boolean; recording_url?: string; transcript?: TranscriptLine[];
 }
-export interface Agent { id: string; name: string; languages: string; phone: string; online: boolean; calls_today: number; business_id: string }
+export interface Agent {
+  id: string; name: string; languages: string; phone: string; online: boolean; calls_today: number; business_id: string;
+  provider?: string; provider_agent_id?: string | null; status?: string; tool_token_exists?: boolean;
+}
 export type Plan = 'Starter' | 'Growth' | 'Business';
 export interface Business {
   id: string; name: string; plan: Plan; minutes_used: number; minutes_limit: number;
@@ -101,6 +104,40 @@ export interface AdminPage<T> {
   page: number;
   limit: number;
   total: number;
+}
+export interface AdminLinkedAgent {
+  id: string;
+  name: string;
+  provider: string;
+  provider_agent_id: string | null;
+  phone_number: string | null;
+  status: string;
+}
+export interface AdminClientIntegration {
+  signed_event_webhook_url: string;
+  tool_url_patterns: Record<string, string>;
+  urls_are_absolute: boolean;
+  credential_exists: boolean;
+  credential_created_at: string | null;
+  credential_rotated_at: string | null;
+  credential_last_used_at: string | null;
+  agents: AdminLinkedAgent[];
+}
+export interface AdminClientToolToken {
+  token: string;
+  tool_urls: Record<string, string>;
+  urls_are_absolute: boolean;
+}
+export interface BillingMe {
+  plan: string;
+  billing_cycle: 'monthly' | 'yearly';
+  minutes_limit: number;
+  minutes_used: number;
+  minutes_remaining: number;
+  usage_percent: number;
+  alert: 'none' | 'warning' | 'limit';
+  renews_on: string;
+  next_payment_amount?: number | null;
 }
 export interface StaffMember { id: string; name: string; title: string; days: boolean[] } // Mon..Sun
 export interface DayHours { open: string; close: string; closed: boolean } // Mon..Sun
