@@ -239,8 +239,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               >
                 Super
               </button>
-            </div>}
-          </div>
+            </div>
+          </div>}
 
           <nav style={{ display: 'grid', gap: 6 }}>
             {items.map(([href, label, icon, badge]) => (
