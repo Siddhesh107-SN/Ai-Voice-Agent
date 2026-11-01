@@ -126,6 +126,42 @@ def test_admin_agent_and_integration_routes_require_super_admin(client, db):
     assert all(row.client_id == tenant["id"] for row in audit_rows)
 
 
+def test_admin_agent_list_includes_link_fields_and_client_token_presence(client):
+    tenant_a = _client(client, "agentlist-a@example.com", "Agent List A")
+    tenant_b = _client(client, "agentlist-b@example.com", "Agent List B")
+    root = super_admin_headers(client)
+    agent_a = _create_agent(client, root, tenant_a["id"]).json()["data"]
+    agent_b = _create_agent(
+        client,
+        root,
+        tenant_b["id"],
+        name="Veda",
+        provider_agent_id="sarvam-agent-2",
+        phone_number="+91 98765 43211",
+    ).json()["data"]
+    _new_tool_token(client, root, tenant_a["id"])
+
+    response = client.get("/api/v1/admin/agents", headers=root)
+    assert response.status_code == 200
+    by_id = {row["id"]: row for row in response.json()}
+    listed_a = by_id[agent_a["id"]]
+    listed_b = by_id[agent_b["id"]]
+
+    assert listed_a["provider_agent_id"] == "sarvam-agent-1"
+    assert listed_a["status"] == "active"
+    assert listed_a["phone_number"] == "+919876543210"
+    assert listed_a["tool_token_exists"] is True
+    assert listed_b["provider_agent_id"] == "sarvam-agent-2"
+    assert listed_b["status"] == "active"
+    assert listed_b["phone_number"] == "+919876543211"
+    assert listed_b["tool_token_exists"] is False
+    assert listed_a["name"] == "Aria"
+    assert listed_a["business_id"] == tenant_a["id"]
+    assert listed_a["business_name"] == "Agent List A"
+    assert isinstance(listed_a["online"], bool)
+    assert isinstance(listed_a["calls_today"], int)
+
+
 def test_agent_phone_provider_uniqueness_and_validation(client):
     tenant_a = _client(client, "agentlink-a@example.com", "Client A")
     tenant_b = _client(client, "agentlink-b@example.com", "Client B")
@@ -297,10 +333,13 @@ def test_client_tool_tokens_are_scoped_rotated_and_never_logged(client, db, capl
 def test_legacy_shared_token_flag_logs_without_token_and_can_be_disabled(
     client, db, caplog, monkeypatch,
 ):
+    from app.services import tool_call_log_service
+
     tenant = _client(client, "agentlink-legacy@example.com", "Legacy Client")
     token = get_settings().sarvam_webhook_secret
     assert token
     caplog.set_level("WARNING")
+    monkeypatch.setattr(tool_call_log_service, "_last_legacy_token_log", float("-inf"))
     before = db.scalar(select(AuditLog.id).order_by(AuditLog.id.desc()))
 
     accepted = _tool_call(client, tenant["id"], token, "+919876543206")
@@ -322,3 +361,47 @@ def test_legacy_shared_token_flag_logs_without_token_and_can_be_disabled(
     rejected = _tool_call(client, tenant["id"], token, "+919876543207")
     assert rejected.status_code == 404
     assert token not in caplog.text
+
+
+def test_integration_exposes_header_tool_call_start_and_completion_setup_urls(client):
+    tenant = _client(client, "agentlink-call-setup@example.com", "Setup Client")
+    root = super_admin_headers(client)
+    integration_response = client.get(
+        f"/api/v1/admin/clients/{tenant['id']}/integration",
+        headers=root,
+    )
+    assert integration_response.status_code == 200
+    integration = integration_response.json()["data"]
+    assert integration["tool_token_header"] == "X-Tool-Token"
+    assert integration["call_completed_header"] == "X-Webhook-Token"
+    assert integration["call_completed_url_pattern"].endswith(
+        f"/{{TOKEN}}/{tenant['id']}/call-completed"
+    )
+    assert integration["call_completed_header_url_pattern"].endswith(
+        f"/{tenant['id']}/call-completed"
+    )
+    assert integration["call_start_header"] == "X-Tool-Token"
+    assert integration["call_start_url_pattern"].endswith(
+        f"/{tenant['id']}/call-start"
+    )
+    assert integration["header_tool_url_patterns"]["book"].endswith(
+        f"/{tenant['id']}/appointments/book"
+    )
+
+    token_response = client.post(
+        f"/api/v1/admin/clients/{tenant['id']}/tool-token",
+        headers=root,
+    )
+    assert token_response.status_code == 200
+    token_data = token_response.json()["data"]
+    raw_token = token_data["token"]
+    assert token_data["call_completed_header"] == "X-Webhook-Token"
+    assert raw_token in token_data["call_completed_url"]
+    assert token_data["call_completed_header_url"].endswith(
+        f"/{tenant['id']}/call-completed"
+    )
+    assert token_data["call_start_header"] == "X-Tool-Token"
+    assert token_data["call_start_url"].endswith(
+        f"/{tenant['id']}/call-start"
+    )
+    assert raw_token not in token_data["header_tool_urls"]["book"]

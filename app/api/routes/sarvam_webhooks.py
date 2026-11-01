@@ -1,23 +1,31 @@
 import logging
 import hmac
+import json
 import secrets
-from hashlib import sha256
 from time import perf_counter
 from typing import Callable, TypeVar
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Path, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Path, Request
+from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.core.dependencies import DbSession
 from app.core.exceptions import AppError, NotFoundError, UnprocessableError
-from app.integrations.sarvam.schemas import SarvamAppointmentRequest, SarvamOutboundPayload
+from app.core.rate_limit import limiter
+from app.integrations.sarvam.schemas import (
+    SarvamAppointmentRequest,
+    SarvamCallCompletedPayload,
+    SarvamOutboundPayload,
+)
 from app.models.client import Client
 from app.models.client_tool_credential import ClientToolCredential
 from app.schemas.appointment import AppointmentOut
 from app.schemas.common import ApiResponse
 from app.services.agent_request_service import AgentRequestService
+from app.services.sarvam_call_service import call_start_status, process_call_completed
 from app.services.sarvam_service import process_sarvam_outbound
 from app.services.tool_call_log_service import (
     log_invalid_tool_token, log_legacy_shared_token_use, record_tool_call,
@@ -33,8 +41,13 @@ T = TypeVar("T")
 
 
 def verify_sarvam_token(request: Request, token: str = Path(...)) -> None:
-    secret = get_settings().sarvam_webhook_secret
-    if not secret or not secrets.compare_digest(token.encode(), secret.encode()):
+    settings = get_settings()
+    secret = settings.sarvam_webhook_secret
+    if (
+        not settings.sarvam_legacy_shared_token_enabled
+        or not secret
+        or not secrets.compare_digest(token.encode(), secret.encode())
+    ):
         log_invalid_tool_token(
             "invalid_or_unconfigured_token",
             request_id=safe_request_id(request, token),
@@ -49,6 +62,17 @@ def verify_client_sarvam_token(
     token: str = Path(...),
     client_id: int = Path(...),
 ) -> None:
+    _verify_client_token(request, db, client_id, token, allow_legacy=True)
+
+
+def _verify_client_token(
+    request: Request,
+    db: DbSession,
+    client_id: int,
+    token: str,
+    *,
+    allow_legacy: bool,
+) -> None:
     credential = db.scalar(
         select(ClientToolCredential).where(
             ClientToolCredential.client_id == client_id,
@@ -60,18 +84,21 @@ def verify_client_sarvam_token(
     ):
         request.state.sarvam_tool_token_valid = True
         request.state.sarvam_tool_credential_id = credential.id
+        request.state.sarvam_tool_auth_token = token
         record_credential_use(credential.id)
         return
 
     settings = get_settings()
     legacy = settings.sarvam_webhook_secret
     if (
-        settings.sarvam_legacy_shared_token_enabled
+        allow_legacy
+        and settings.sarvam_legacy_shared_token_enabled
         and legacy
         and hmac.compare_digest(token.encode("utf-8"), legacy.encode("utf-8"))
     ):
         request.state.sarvam_tool_token_valid = True
         request.state.sarvam_legacy_shared_token_used = True
+        request.state.sarvam_tool_auth_token = token
         request_id = safe_request_id(request, token)
         log_legacy_shared_token_use(client_id, request_id)
         return
@@ -83,11 +110,109 @@ def verify_client_sarvam_token(
     raise NotFoundError("Not found")
 
 
+def _bearer_token(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    scheme, separator, credentials = authorization.partition(" ")
+    if separator and scheme.lower() == "bearer" and credentials.strip():
+        return credentials.strip()
+    return None
+
+
+def verify_client_sarvam_header_token(
+    request: Request,
+    db: DbSession,
+    client_id: int = Path(...),
+    x_tool_token: str | None = Header(default=None, alias="X-Tool-Token"),
+    authorization: str | None = Header(default=None),
+) -> str:
+    token = x_tool_token or _bearer_token(authorization)
+    if not token:
+        log_invalid_tool_token(
+            "missing_or_invalid_header_token",
+            request_id=safe_request_id(request),
+        )
+        raise NotFoundError("Not found")
+    _verify_client_token(request, db, client_id, token, allow_legacy=False)
+    return token
+
+
+def verify_client_sarvam_webhook_token(
+    request: Request,
+    db: DbSession,
+    token: str = Path(...),
+    client_id: int = Path(...),
+) -> None:
+    _verify_client_token(request, db, client_id, token, allow_legacy=False)
+
+
+def verify_client_sarvam_webhook_header(
+    request: Request,
+    db: DbSession,
+    client_id: int = Path(...),
+    x_webhook_token: str | None = Header(default=None, alias="X-Webhook-Token"),
+    authorization: str | None = Header(default=None),
+) -> str:
+    token = x_webhook_token or _bearer_token(authorization)
+    if not token:
+        log_invalid_tool_token(
+            "missing_or_invalid_webhook_header_token",
+            request_id=safe_request_id(request),
+        )
+        raise NotFoundError("Not found")
+    _verify_client_token(request, db, client_id, token, allow_legacy=False)
+    return token
+
+
+def verify_client_sarvam_call_start_token(
+    request: Request,
+    db: DbSession,
+    client_id: int = Path(...),
+    x_tool_token: str | None = Header(default=None, alias="X-Tool-Token"),
+    authorization: str | None = Header(default=None),
+) -> str:
+    return verify_client_sarvam_header_token(
+        request, db, client_id, x_tool_token, authorization
+    )
+
+
 def _safe_record_tool_call(**fields) -> None:
     try:
         record_tool_call(**fields)
     except Exception:
         logger.exception("Could not audit Sarvam tool call")
+
+
+def _reject_json_constant(value: str):
+    raise ValueError(f"Invalid JSON number: {value}")
+
+
+async def _handle_call_completed(
+    request: Request,
+    db: Session,
+    client_id: int,
+    token: str,
+) -> dict:
+    try:
+        raw_payload = json.loads(
+            await request.body(),
+            parse_constant=_reject_json_constant,
+        )
+    except (UnicodeDecodeError, ValueError):
+        return {"ok": True, "status": "ignored"}
+    if not isinstance(raw_payload, dict):
+        return {"ok": True, "status": "ignored"}
+    try:
+        payload = SarvamCallCompletedPayload.model_validate(raw_payload)
+    except ValidationError:
+        return {"ok": True, "status": "ignored"}
+    return process_call_completed(
+        db,
+        client_id=client_id,
+        payload=payload,
+        raw_payload=raw_payload,
+        request_id=safe_request_id(request, token),
+    )
 
 
 def _logged_tool_call(request: Request, db: DbSession, client_id: int, tool: str,
@@ -146,9 +271,47 @@ def _process_outbound(payload: SarvamOutboundPayload) -> None:
 
 
 @router.post("/sarvam/{token}/outbound", dependencies=[Depends(verify_sarvam_token)])
-def outbound(token: str, payload: SarvamOutboundPayload, background_tasks: BackgroundTasks):
+@limiter.limit("30/minute")
+def outbound(request: Request, token: str, payload: SarvamOutboundPayload, background_tasks: BackgroundTasks):
     background_tasks.add_task(_process_outbound, payload)
     return {"ok": True}
+
+
+@router.post(
+    "/sarvam/{token}/{client_id}/call-completed",
+    dependencies=[Depends(verify_client_sarvam_webhook_token)],
+)
+@limiter.limit("30/minute")
+async def call_completed(request: Request, token: str, client_id: int, db: DbSession):
+    return await _handle_call_completed(request, db, client_id, token)
+
+
+@router.post("/sarvam/{client_id}/call-completed")
+@limiter.limit("30/minute")
+async def call_completed_header(
+    request: Request,
+    client_id: int,
+    db: DbSession,
+    token: str = Depends(verify_client_sarvam_webhook_header),
+):
+    return await _handle_call_completed(request, db, client_id, token)
+
+
+@router.post("/sarvam/{client_id}/call-start")
+@limiter.limit("30/minute")
+def call_start(
+    request: Request,
+    client_id: int,
+    db: DbSession,
+    token: str = Depends(verify_client_sarvam_call_start_token),
+):
+    settings = get_settings()
+    return call_start_status(
+        db,
+        client_id,
+        settings.overage_grace_percent,
+        safe_request_id(request, token),
+    )
 
 
 def _require_date_time(body: SarvamAppointmentRequest) -> tuple:
@@ -162,8 +325,14 @@ def _require_date_time(body: SarvamAppointmentRequest) -> tuple:
 
 @router.post("/sarvam/{token}/{client_id}/appointments/check-slot",
              response_model=ApiResponse[dict], dependencies=[Depends(verify_client_sarvam_token)])
+@limiter.limit("60/minute")
 def check_slot(request: Request, token: str, client_id: int,
                body: SarvamAppointmentRequest, db: DbSession):
+    return _check_slot(request, token, client_id, body, db)
+
+
+def _check_slot(request: Request, token: str, client_id: int,
+                body: SarvamAppointmentRequest, db: Session):
     def operation():
         appointment_date, appointment_time = _require_date_time(body)
         available = AgentRequestService(db, client_id).check_slot(
@@ -179,8 +348,14 @@ def check_slot(request: Request, token: str, client_id: int,
 @router.post("/sarvam/{token}/{client_id}/appointments/book",
              response_model=ApiResponse[AppointmentOut],
              dependencies=[Depends(verify_client_sarvam_token)])
+@limiter.limit("60/minute")
 def book(request: Request, token: str, client_id: int,
          body: SarvamAppointmentRequest, db: DbSession):
+    return _book(request, token, client_id, body, db)
+
+
+def _book(request: Request, token: str, client_id: int,
+          body: SarvamAppointmentRequest, db: Session):
     def operation():
         appointment_date, appointment_time = _require_date_time(body)
         appointment = AgentRequestService(db, client_id).book(
@@ -196,8 +371,14 @@ def book(request: Request, token: str, client_id: int,
 @router.post("/sarvam/{token}/{client_id}/appointments/reschedule",
              response_model=ApiResponse[AppointmentOut],
              dependencies=[Depends(verify_client_sarvam_token)])
+@limiter.limit("60/minute")
 def reschedule(request: Request, token: str, client_id: int,
                body: SarvamAppointmentRequest, db: DbSession):
+    return _reschedule(request, token, client_id, body, db)
+
+
+def _reschedule(request: Request, token: str, client_id: int,
+                body: SarvamAppointmentRequest, db: Session):
     def operation():
         if body.new_date is None or body.new_time is None:
             raise UnprocessableError("new_date and new_time are required",
@@ -217,8 +398,14 @@ def reschedule(request: Request, token: str, client_id: int,
 @router.post("/sarvam/{token}/{client_id}/appointments/cancel",
              response_model=ApiResponse[AppointmentOut],
              dependencies=[Depends(verify_client_sarvam_token)])
+@limiter.limit("60/minute")
 def cancel(request: Request, token: str, client_id: int,
            body: SarvamAppointmentRequest, db: DbSession):
+    return _cancel(request, token, client_id, body, db)
+
+
+def _cancel(request: Request, token: str, client_id: int,
+            body: SarvamAppointmentRequest, db: Session):
     def operation():
         appointment = AgentRequestService(db, client_id).cancel(
             customer_phone=body.customer_phone, appointment_id=body.appointment_id,
@@ -229,3 +416,55 @@ def cancel(request: Request, token: str, client_id: int,
     return _logged_tool_call(request, db, client_id, "cancel", operation,
                              token,
                              appointment_id=body.appointment_id)
+
+
+@router.post("/sarvam/{client_id}/appointments/check-slot",
+             response_model=ApiResponse[dict])
+@limiter.limit("60/minute")
+def check_slot_header(
+    request: Request,
+    client_id: int,
+    body: SarvamAppointmentRequest,
+    db: DbSession,
+    token: str = Depends(verify_client_sarvam_header_token),
+):
+    return _check_slot(request, token, client_id, body, db)
+
+
+@router.post("/sarvam/{client_id}/appointments/book",
+             response_model=ApiResponse[AppointmentOut])
+@limiter.limit("60/minute")
+def book_header(
+    request: Request,
+    client_id: int,
+    body: SarvamAppointmentRequest,
+    db: DbSession,
+    token: str = Depends(verify_client_sarvam_header_token),
+):
+    return _book(request, token, client_id, body, db)
+
+
+@router.post("/sarvam/{client_id}/appointments/reschedule",
+             response_model=ApiResponse[AppointmentOut])
+@limiter.limit("60/minute")
+def reschedule_header(
+    request: Request,
+    client_id: int,
+    body: SarvamAppointmentRequest,
+    db: DbSession,
+    token: str = Depends(verify_client_sarvam_header_token),
+):
+    return _reschedule(request, token, client_id, body, db)
+
+
+@router.post("/sarvam/{client_id}/appointments/cancel",
+             response_model=ApiResponse[AppointmentOut])
+@limiter.limit("60/minute")
+def cancel_header(
+    request: Request,
+    client_id: int,
+    body: SarvamAppointmentRequest,
+    db: DbSession,
+    token: str = Depends(verify_client_sarvam_header_token),
+):
+    return _cancel(request, token, client_id, body, db)

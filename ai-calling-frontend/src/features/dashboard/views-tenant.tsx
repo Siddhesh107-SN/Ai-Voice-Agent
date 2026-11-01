@@ -8,7 +8,7 @@ import { ApptForm } from './appointments';
 import { Chips, CopyButton, Dialog, Meter, PageHead, Player, Status, Toggle } from './ui';
 import { ACTIVE_STATUSES, DAYS, TENANT_ID, TODAY, WEEKLY, fmtDur, initials } from './util';
 import type { Call } from './types';
-import { fetchBillingMe, toggleAgentPower, updateBusinessSettings, fetchCallDetails } from './api';
+import { fetchBillingMe, isMockMode, toggleAgentPower, updateBusinessSettings, fetchCallDetails, type MockBillingState } from './api';
 
 export function ConfirmLogoutDialog() {
   const { closeModal, logout } = useDash();
@@ -99,6 +99,7 @@ export function PinDialog() {
 }
 
 export function PlanCard() {
+  const [mockState, setMockState] = useState<MockBillingState>('normal');
   const [billing, setBilling] = useState<Awaited<ReturnType<typeof fetchBillingMe>> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -108,21 +109,23 @@ export function PlanCard() {
     let active = true;
     setLoading(true);
     setError('');
-    fetchBillingMe()
+    fetchBillingMe(mockState)
       .then((result) => { if (active) setBilling(result); })
       .catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : 'Unable to load billing details.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [retry]);
+  }, [retry, mockState]);
 
   if (loading) return <div className="card" role="status">Loading plan and minutes…</div>;
   if (error || !billing) {
     return <div className="card" role="alert"><h3>Your plan</h3><p>{error || 'Billing details are unavailable.'}</p><button onClick={() => setRetry((value) => value + 1)}>Retry</button></div>;
   }
 
+  const paused = billing.calls_paused;
   const atLimit = billing.alert === 'limit' || billing.usage_percent >= 100;
   const warning = !atLimit && (billing.alert === 'warning' || billing.usage_percent >= 80);
-  const color = atLimit ? 'var(--bad)' : warning ? 'var(--warn)' : 'var(--blue)';
+  const normal = !paused && !atLimit && !warning;
+  const color = paused || atLimit ? 'var(--bad)' : warning ? 'var(--warn)' : 'var(--blue)';
   const renewalDate = billing.renews_on.slice(0, 10);
   return (
     <div className="card">
@@ -131,13 +134,24 @@ export function PlanCard() {
         <span className="st">{billing.plan}</span>
       </div>
       <p className="mut" style={{ margin: '4px 0' }}>{billing.plan} plan, billed {billing.billing_cycle}</p>
+      {isMockMode() && <label>Mock billing preview
+        <select value={mockState} onChange={(event) => setMockState(event.target.value as MockBillingState)}>
+          <option value="normal">Normal</option><option value="warning">Warning (80%)</option>
+          <option value="limit">Limit reached (100%)</option><option value="paused">Paused</option>
+        </select>
+      </label>}
       <Meter used={billing.minutes_used} limit={billing.minutes_limit} percent={billing.usage_percent} color={color} />
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <span className="mono">{billing.minutes_remaining} of {billing.minutes_limit} minutes left</span>
         <span className="mono">{billing.usage_percent}% used</span>
       </div>
-      {atLimit && <p role="status" style={{ color: 'var(--bad)', margin: '8px 0 0' }}>Usage limit reached.</p>}
-      {warning && <p role="status" style={{ color: 'var(--warn)', margin: '8px 0 0' }}>Usage is at the warning level.</p>}
+      {paused
+        ? <p role="status" style={{ color: 'var(--bad)', margin: '8px 0 0' }}>Your agent is paused because your minutes are used up. Contact Talkaor to add minutes.</p>
+        : atLimit
+          ? <p role="status" style={{ color: 'var(--bad)', margin: '8px 0 0' }}>You have used all your plan minutes. Calls will pause at {billing.pause_at_percent}%</p>
+          : warning
+            ? <p role="status" style={{ color: 'var(--warn)', margin: '8px 0 0' }}>You have used 80% of your minutes</p>
+            : normal && <p role="status" style={{ color, margin: '8px 0 0' }}>Your minutes are within your plan limit.</p>}
       <p style={{ margin: '10px 0 6px' }}><b>Next renewal:</b> <span className="mono">{renewalDate}</span></p>
       <p className="mut" style={{ margin: 0 }}>Each call is rounded up to a whole minute.</p>
     </div>
@@ -148,18 +162,31 @@ export function DashboardHome() {
   const { s, can, openModal } = useDash();
   const A = s.appts, tod = A.filter((a) => a.date === TODAY), done = tod.filter((a) => a.status === 'completed').length;
   const active = A.filter((a) => ACTIVE_STATUSES.includes(a.status)).length;
-  const agents = s.agents.filter((a) => a.business_id === TENANT_ID), on = agents.filter((a) => a.online).length;
+  const mockMode = isMockMode();
+  const agents = mockMode
+    ? s.agents.filter((agent) => agent.business_id === TENANT_ID)
+    : s.agents;
+  const on = agents.filter((a) => a.online).length;
+  const assignedAgent = agents.find((agent) => agent.phone) || agents[0];
   const first = s.calls.find((c) => c.has_recording);
+  const customerCount = new Set(A.map((appointment) => appointment.customer_id)).size;
 
-  const name = s.user?.name || (s.role === 'admin' ? 'Dr. Anil Rao' : s.role === 'staff' ? 'Meera Kulkarni' : 'Platform Owner');
+  const name = s.user?.name || (s.role === 'admin' ? 'Admin' : s.role === 'staff' ? 'Staff' : 'Platform Owner');
   const title = s.role === 'admin' ? 'Business owner' : s.role === 'staff' ? 'Staff member' : 'Super admin';
 
-  const kpis = [
-    { t: "Today's appointments", v: String(tod.length), i: 'cal', n: `${done} completed · ${tod.length - done} pending`, k: 'k1' },
-    { t: 'Total calls handled', v: '342', i: 'phone', n: `${s.calls.length} today · all-time total`, k: 'k2' },
-    { t: 'Active AI agents', v: `${on} / ${agents.length || 1}`, i: 'bot', n: `${Math.round((on / (agents.length || 1)) * 100)}% availability`, k: 'k3' },
-    { t: 'Customer records', v: '128', i: 'users', n: '+8 new this month', k: 'k4' },
-  ];
+  const kpis = mockMode
+    ? [
+      { t: "Today's appointments", v: String(tod.length), i: 'cal', n: `${done} completed · ${tod.length - done} pending`, k: 'k1' },
+      { t: 'Total calls handled', v: '342', i: 'phone', n: `${s.calls.length} today · all-time total`, k: 'k2' },
+      { t: 'Active AI agents', v: `${on} / ${agents.length || 1}`, i: 'bot', n: `${Math.round((on / (agents.length || 1)) * 100)}% availability`, k: 'k3' },
+      { t: 'Customer records', v: '128', i: 'users', n: '+8 new this month', k: 'k4' },
+    ]
+    : [
+      { t: "Today's appointments", v: String(tod.length), i: 'cal', n: `${done} completed · ${tod.length - done} pending`, k: 'k1' },
+      { t: 'Calls loaded', v: String(s.calls.length), i: 'phone', n: 'From live call records', k: 'k2' },
+      { t: 'Active AI agents', v: `${on} / ${agents.length}`, i: 'bot', n: agents.length ? `${Math.round((on / agents.length) * 100)}% availability` : 'No linked agents', k: 'k3' },
+      { t: 'Customers with appointments', v: String(customerCount), i: 'users', n: 'From loaded appointments', k: 'k4' },
+    ];
   const strip = [['Total bookings', A.length, '#285CCC'], ['Completed', A.filter((a) => a.status === 'completed').length, '#2f9e75'], ['Scheduled active', active, '#F5A04A'], ['Cancelled', A.filter((a) => a.status === 'cancelled').length, '#d6486b']] as const;
   return (
     <>
@@ -177,10 +204,15 @@ export function DashboardHome() {
           </div>
           <div className="k22">{kpis.map((k) => <div key={k.t} className={`card kp ${k.k}`}><span className="ic"><Icon name={k.i} /></span><small className="mut">{k.t}</small><b>{k.v}</b><small>{k.n}</small></div>)}</div>
           <div className="card strip">{strip.map((x) => <div key={x[0]} style={{ boxShadow: `inset 0 4px ${x[2]}` }}><small className="mut">{x[0]}</small><br /><b>{x[1]}</b></div>)}</div>
-          <div className="card">
-            <h3>Call and booking volume</h3><small className="mut">Past 7 days. Blue: calls handled. Orange: appointments booked.</small>
-            <div className="bars">{WEEKLY.map((b, i) => <div key={i} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}><div style={{ flex: 1 }}><i style={{ height: `${(b[0] / 9) * 100}%` }} /><i style={{ height: `${(b[1] / 9) * 100}%` }} /></div><span>{DAYS[i]}</span></div>)}</div>
-          </div>
+          {mockMode
+            ? <div className="card">
+              <h3>Call and booking volume</h3><small className="mut">Past 7 days. Blue: calls handled. Orange: appointments booked.</small>
+              <div className="bars">{WEEKLY.map((b, i) => <div key={i} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}><div style={{ flex: 1 }}><i style={{ height: `${(b[0] / 9) * 100}%` }} /><i style={{ height: `${(b[1] / 9) * 100}%` }} /></div><span>{DAYS[i]}</span></div>)}</div>
+            </div>
+            : <div className="card">
+              <h3>Call and booking volume</h3>
+              <p className="mut">Live weekly volume is unavailable because call records do not include timestamps.</p>
+            </div>}
           {first && <div className="card"><h3>Latest recording</h3><p style={{ margin: '6px 0' }}><b>{first.customer_name}</b> with {first.agent_name} <span className="st">{first.outcome}</span></p><p className="mut" style={{ margin: '0 0 8px' }}>{first.summary}</p><button onClick={() => openModal(<CallDetails c={first} />)}>Open call details</button></div>}
         </div>
         <div className="rc">
@@ -191,6 +223,22 @@ export function DashboardHome() {
             </div>
             <div className="mini" style={{ marginTop: 14 }}><div><b>{active}</b><small>Booked</small></div><div><b>{on}</b><small>Agents</small></div><div><b>{s.calls.length}</b><small>Calls</small></div></div>
           </div>
+          {s.role !== 'super_admin' && <>
+            <div className="card">
+              <h3>Your assigned phone number</h3>
+              {assignedAgent?.phone
+                ? <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <b className="mono" style={{ fontSize: 20 }}>{assignedAgent.phone}</b>
+                    <CopyButton value={assignedAgent.phone} label="Copy number" />
+                  </div>
+                  <p className="mut">This is the number your customers call.</p>
+                </>
+                : <p className="mut">Your number will be assigned by Talkaor. Contact support if this takes long.</p>}
+              {assignedAgent && <span className={`st ${assignedAgent.online ? 'completed' : 'cancelled'}`}>{assignedAgent.status || (assignedAgent.online ? 'active' : 'inactive')}</span>}
+            </div>
+            <PlanCard />
+          </>}
           <CalendarCard /><DayRoster />
         </div>
       </div>
@@ -210,7 +258,7 @@ export function CustomersView() {
           <tbody>{list.map((c) => (
             <tr key={c.customer_id}><td><b>{c.customer_name}</b></td><td className="mono">{c.customer_phone}</td><td>{c.customer_email}</td>
               <td>{s.appts.filter((a) => a.customer_id === c.customer_id).length}</td><td>{c.service}</td>
-              <td style={{ whiteSpace: 'nowrap' }}><button onClick={() => toast(`Calling ${c.customer_name} (demo)`)}>Call</button> <button onClick={() => toast('Opening WhatsApp (demo)')}>WhatsApp</button> {can && <button onClick={() => openModal(<ApptForm />)}>Book</button>}</td></tr>
+              <td style={{ whiteSpace: 'nowrap' }}>{isMockMode() && <><button onClick={() => toast(`Calling ${c.customer_name} (demo)`)}>Call</button> <button onClick={() => toast('Opening WhatsApp (demo)')}>WhatsApp</button> </>}{can && <button onClick={() => openModal(<ApptForm />)}>Book</button>}</td></tr>
           ))}</tbody></table>
       </div>
     </>
@@ -304,7 +352,9 @@ export function CancellationsView() {
 
 export function AgentsView() {
   const { s, can, openModal, closeModal, toast, actor, reload } = useDash();
-  const list = s.agents.filter((a) => a.business_id === TENANT_ID);
+  const list = isMockMode()
+    ? s.agents.filter((agent) => agent.business_id === TENANT_ID)
+    : s.agents;
 
   const click = async (id: string) => {
     if (!can) { toast('View only. Enter the admin PIN to change agents.'); return; }
@@ -389,8 +439,7 @@ export function BusinessView() {
   return (
     <>
       <PageHead title="Business profile" right={can ? <button className="pri" onClick={saveBiz}>Save changes</button> : <span className="st">View only</span>} />
-      <div className="cols">
-        <div style={{ display: 'grid', gap: 14 }}>
+      <div style={{ display: 'grid', gap: 14 }}>
           <div className="card" style={{ display: 'grid', gap: 10 }}>
             <label>Business name<input disabled={!can} defaultValue="Sunrise Dental Care" /></label>
             <label>Business type<select disabled={!can}><option>Healthcare clinic</option><option>Education</option><option>Salon or spa</option></select></label>
@@ -420,7 +469,6 @@ export function BusinessView() {
             ))}
           </div>
         </div>
-      </div>
       <div className="card" style={{ marginTop: 14 }}>
         <h3>Staff availability</h3>{!can && <p className="mut" style={{ margin: '4px 0' }}>View only.</p>}
         <div style={{ overflow: 'auto' }}>
@@ -474,9 +522,6 @@ export function AdminView() {
             </>}
           </div>
           <div className="card"><h3>Audit log</h3><div className="tl" style={{ marginTop: 10 }}>{s.logs.slice(0, 5).map((l, i) => <div key={i}>{l.text}<br /><small className="mut">{l.at}</small></div>)}</div></div>
-        </div>
-        <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
-          <PlanCard />
         </div>
       </div>
     </>

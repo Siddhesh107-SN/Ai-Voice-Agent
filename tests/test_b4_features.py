@@ -7,8 +7,7 @@
    - GET /admin/businesses (listing, usage, login, has_pin, no PIN exposed)
    - PATCH /admin/businesses/{id}/status (Active/Suspended, suspended users get 403, audit log)
    - POST /admin/businesses/{id}/minute-pack (adds minutes, range validation, audit log)
-   - POST /admin/businesses/{id}/pin-view (decrypts pin, audit-logged without pin, rate-limited)
-   - POST /admin/businesses/{id}/pin-reset (sets/generates pin, clears lockouts, audit log)
+   - POST /admin/businesses/{id}/pin-reset (sets a PIN without returning it, clears lockouts, audit log)
 3. Agents:
    - GET /admin/agents (platform-wide agents, metrics)
    - PATCH /admin/agents/{id}/power (toggles is_active across tenants, audit log)
@@ -253,23 +252,12 @@ def test_admin_minute_pack_and_pin_operations(client, db):
         json={"pin": "8888"},
     )
     assert resp_reset.status_code == 200
-    assert resp_reset.json()["pin"] == "8888"
-
-    # 3. View PIN
-    resp_view = client.post(f"/api/v1/admin/businesses/{cid}/pin-view", headers=h_super)
-    assert resp_view.status_code == 200
-    assert resp_view.json()["pin"] == "8888"
-
-    # Audit log check for view (warn level, no PIN in log text or details)
-    audit_view = db.scalar(
-        select(AuditLog)
-        .where(AuditLog.client_id == cid, AuditLog.action == "admin.pin.view")
-        .order_by(AuditLog.id.desc())
-    )
-    assert audit_view is not None
-    assert audit_view.level == "warn"
-    assert "8888" not in (audit_view.message or "")
-    assert "8888" not in str(audit_view.details or "")
+    assert resp_reset.json()["message"] == "PIN reset successfully"
+    assert "pin" not in resp_reset.json()
+    assert client.post(
+        f"/api/v1/admin/businesses/{cid}/pin-view",
+        headers=h_super,
+    ).status_code == 404
 
 
 # ---------------- 3. AGENTS ----------------

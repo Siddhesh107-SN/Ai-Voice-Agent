@@ -45,10 +45,16 @@ export interface State extends MockData {
   user?: UserProfile;
 }
 
+const mockRoleSwitchingEnabled =
+  process.env.NODE_ENV !== 'production' &&
+  process.env.NEXT_PUBLIC_API_MODE === 'mock';
+
 interface Ctx {
   s: State;
   set: (fn: (p: State) => State) => void;
   simulate: boolean;
+  dashboardError: boolean;
+  dashboardLoaded: boolean;
   can: boolean;
   isSA: boolean;
   actor: string;
@@ -97,15 +103,17 @@ export function DashboardProvider({
     day: TODAY,
     user: initialUser || {
       id: initialRole === 'super_admin' ? 'u_superadmin' : initialRole === 'staff' ? 'u_staff' : 'u_admin',
-      name: initialRole === 'super_admin' ? 'Platform Owner' : initialRole === 'staff' ? 'Meera Kulkarni' : 'Dr. Anil Rao',
-      email: initialRole === 'super_admin' ? 'superadmin@talkaor.com' : initialRole === 'staff' ? 'meera@sunrisedental.in' : 'dr.anil@sunrisedental.in',
+      name: initialRole === 'super_admin' ? 'Platform Owner' : initialRole === 'staff' ? 'Staff' : 'Admin',
+      email: '',
       role: initialRole,
-      businessName: 'Sunrise Dental Care',
+      businessName: 'Your Business',
     },
   }));
 
   const [modal, setModal] = useState<ReactNode>(null);
   const [toasts, setToasts] = useState<{ id: number; text: string }[]>([]);
+  const [dashboardError, setDashboardError] = useState(false);
+  const [dashboardLoaded, setDashboardLoaded] = useState(false);
   const logoutStartedRef = useRef(false);
   const channelRef = useRef<BroadcastChannel | null>(null);
   const closeModal = useCallback(() => setModal(null), []);
@@ -113,6 +121,7 @@ export function DashboardProvider({
   // Sync initial data from backend API
   const reload = useCallback(async () => {
     if (logoutStartedRef.current) return;
+    setDashboardError(false);
     try {
       const data = await fetchInitialDashboardData();
       if (logoutStartedRef.current) return;
@@ -120,8 +129,9 @@ export function DashboardProvider({
         ...prev,
         ...data,
       }));
+      setDashboardLoaded(true);
     } catch {
-      // Keep existing data on error
+      if (!logoutStartedRef.current) setDashboardError(true);
     }
   }, []);
 
@@ -134,7 +144,15 @@ export function DashboardProvider({
     }
   }, []);
 
-  const set = useCallback((fn: (p: State) => State) => setS(fn), []);
+  const set = useCallback((fn: (p: State) => State) => setS((prev) => {
+    const next = fn(prev);
+    if (mockRoleSwitchingEnabled || next.role === prev.role) return next;
+    return {
+      ...next,
+      role: prev.role,
+      user: next.user ? { ...next.user, role: prev.role } : next.user,
+    };
+  }), []);
   const toast = useCallback((text: string) => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t, { id, text }]);
@@ -203,7 +221,7 @@ export function DashboardProvider({
   }, [reload]);
 
   useEffect(() => {
-    if (simulate) return;
+    if (simulate || s.role === 'super_admin') return;
 
     const refreshAppointments = async () => {
       if (document.hidden || logoutStartedRef.current) return;
@@ -212,7 +230,7 @@ export function DashboardProvider({
         if (logoutStartedRef.current) return;
         setS((prev) => ({ ...prev, appts }));
       } catch {
-        // Ignore polling errors and keep the current appointments.
+        if (!logoutStartedRef.current) setDashboardError(true);
       }
     };
 
@@ -229,7 +247,7 @@ export function DashboardProvider({
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [simulate]);
+  }, [simulate, s.role]);
 
   const setTheme = useCallback((theme: Theme) => {
     try {
@@ -241,6 +259,7 @@ export function DashboardProvider({
   }, []);
 
   const setRole = useCallback((role: Role) => {
+    if (!mockRoleSwitchingEnabled) return;
     document.cookie = `tk_role=${role}; path=/; max-age=86400`;
     setS((p) => ({ ...p, role, elevated: false }));
   }, []);
@@ -279,6 +298,8 @@ export function DashboardProvider({
         s,
         set,
         simulate,
+        dashboardError,
+        dashboardLoaded,
         can,
         isSA: s.role === 'super_admin',
         actor,

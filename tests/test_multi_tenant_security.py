@@ -618,7 +618,7 @@ def test_super_admin_per_client_summary_matches_that_clients_own_view(client, db
 # Global catalog tables are not tenant-owned and do not have client_id.
 GLOBAL_TABLES = {"plans"}
 # These records belong to users and intentionally have no direct tenant key.
-USER_SCOPED_TABLES = {"email_verifications", "refresh_tokens"}
+USER_SCOPED_TABLES = {"email_verifications", "refresh_tokens", "password_reset_codes"}
 # client_id may be NULL for super-admin/platform records and public contact enquiries.
 NULLABLE_TENANT_TABLES = {
     "users", "audit_logs", "webhook_events", "call_attempts", "enquiries"
@@ -657,18 +657,28 @@ def _requires_auth(dependant) -> bool:
     return any(_requires_auth(d) for d in dependant.dependencies)
 
 
-# Webhooks authenticate via provider signature (see integrations/sarvam/webhook.py), not JWT.
+# Webhooks authenticate by provider signature or the documented per-client Sarvam token, not JWT.
 PUBLIC_ROUTES = {"/api/v1/health", "/api/v1/auth/register", "/api/v1/auth/login",
                  "/api/v1/auth/refresh", "/api/v1/webhooks/sarvam",
                  "/api/v1/webhooks/sarvam/{token}/outbound",
+                 "/api/v1/webhooks/sarvam/{token}/{client_id}/call-completed",
+                 "/api/v1/webhooks/sarvam/{client_id}/call-completed",
+                 "/api/v1/webhooks/sarvam/{client_id}/call-start",
                  "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/check-slot",
                  "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/book",
                  "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/reschedule",
-                 "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/cancel"}
+                 "/api/v1/webhooks/sarvam/{token}/{client_id}/appointments/cancel",
+                 "/api/v1/webhooks/sarvam/{client_id}/appointments/check-slot",
+                 "/api/v1/webhooks/sarvam/{client_id}/appointments/book",
+                 "/api/v1/webhooks/sarvam/{client_id}/appointments/reschedule",
+                 "/api/v1/webhooks/sarvam/{client_id}/appointments/cancel"}
 # Logout revokes the refresh token in its request body and intentionally has no access-token dependency.
 PUBLIC_ROUTES.add("/api/v1/auth/logout")
-# Forgot-password is public and rate-limited; the admin reset-password route remains super-admin-only.
-PUBLIC_ROUTES.add("/api/v1/auth/forgot-password")
+# Email-based password recovery is public and rate-limited; admin resets remain protected.
+PUBLIC_ROUTES.update({
+    "/api/v1/auth/forgot-password",
+    "/api/v1/auth/reset-password",
+})
 # Public plan catalog and rate-limited contact form are used before sign-in.
 PUBLIC_ROUTES.update({"/api/v1/plans", "/api/v1/contact"})
 

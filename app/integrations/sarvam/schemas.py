@@ -1,10 +1,11 @@
 """Wire schemas for Sarvam. Field names are illustrative pending Sarvam's exact webhook
 contract — adjust here (and only here) once that's confirmed; nothing downstream depends
 on the wire shape directly."""
+import math
 from datetime import date, datetime, time
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SarvamEventType = Literal[
     "call_started", "call_completed", "appointment_created",
@@ -94,6 +95,67 @@ class SarvamOutboundPayload(BaseModel):
     final_agent_variables: dict[str, Any] | None = None
     webhook_config: SarvamWebhookConfig | None = None
     interaction_transcript: list[SarvamTranscriptItem] | None = None
+
+
+class SarvamCallCompletedTranscriptItem(BaseModel):
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    role: str | None = None
+    en_text: str | None = None
+    indic_text: str | None = None
+
+
+class SarvamCallCompletedPayload(BaseModel):
+    """Lenient schema for Sarvam's call-completed callback; unknown fields are ignored."""
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    app_id: str | None = Field(default=None, max_length=255)
+    interaction_id: str | None = Field(default=None, max_length=255)
+    attempt_id: str | None = Field(default=None, max_length=255)
+    from_number: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("from_number", "caller_number", "caller_phone_number"),
+    )
+    to_number: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("to_number", "dialed_number", "dialed_phone_number"),
+    )
+    phone_number: str | None = None
+    agent_phone_number: str | None = None
+    duration: float | None = Field(default=None, ge=0, le=2147483647)
+    completion_status: str | None = None
+    connectivity_status: str | None = None
+    start_time: datetime | None = Field(
+        default=None, validation_alias=AliasChoices("start_time", "started_at")
+    )
+    end_time: datetime | None = Field(
+        default=None, validation_alias=AliasChoices("end_time", "ended_at")
+    )
+    interaction_transcript: list[SarvamCallCompletedTranscriptItem] | None = None
+    final_agent_variables: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
+    webhook_config: SarvamWebhookConfig | None = None
+
+    @field_validator("app_id", "interaction_id", "attempt_id", mode="before")
+    @classmethod
+    def _blank_ids_to_none(cls, value):
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("duration")
+    @classmethod
+    def _finite_duration(cls, value: float | None) -> float | None:
+        if value is not None and not math.isfinite(value):
+            raise ValueError("duration must be finite")
+        return value
+
+    @model_validator(mode="after")
+    def _require_interaction_or_attempt(self) -> "SarvamCallCompletedPayload":
+        if self.interaction_id is None and self.attempt_id is None:
+            raise ValueError("interaction_id or attempt_id is required")
+        return self
 
 
 class SarvamAppointmentRequest(BaseModel):

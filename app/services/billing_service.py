@@ -6,7 +6,15 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.call import Call
-from app.models.enums import BillingCycle, PlanKey, SubscriptionStatus
+from app.core.config import get_settings
+from app.models.client import Client
+from app.models.enums import (
+    AccessStatus,
+    BillingCycle,
+    ClientStatus,
+    PlanKey,
+    SubscriptionStatus,
+)
 from app.models.plan import MinutePack, Plan, Subscription
 
 
@@ -16,6 +24,31 @@ def minutes_for_call(duration_seconds: float | int | None) -> int:
     if duration_seconds is None or duration_seconds <= 0:
         return 0
     return math.ceil(duration_seconds / 60)
+
+
+def call_start_reason(
+    client: Client | None,
+    billing: dict,
+    overage_grace_percent: int,
+) -> str:
+    """Share the call-start decision between the webhook gate and billing response."""
+    if client is None:
+        return "ok"
+    if client.access_status == AccessStatus.SUSPENDED:
+        return "suspended"
+    if (
+        not client.is_active
+        or client.status != ClientStatus.ACTIVE
+        or client.access_status != AccessStatus.ACTIVE
+    ):
+        return "inactive"
+    minutes_limit = billing["minutes_limit"]
+    minutes_used = billing["minutes_used"]
+    if minutes_limit <= 0 or minutes_used * 100 >= minutes_limit * (
+        100 + max(0, overage_grace_percent)
+    ):
+        return "over_limit"
+    return "ok"
 
 
 class BillingService:
@@ -107,32 +140,48 @@ class BillingService:
             sub = self.get_or_create_default_subscription(client_id)
         if sub is None:
             growth_plan = self.db.scalar(select(Plan).where(Plan.key == "growth"))
-            return self._summary(growth_plan, "monthly", None, 0, 0)
-        plan = self.db.get(Plan, sub.plan_id)
-        plan_included = plan.included_minutes if plan else 1000
+            billing = self._summary(growth_plan, "monthly", None, 0, 0)
+        else:
+            plan = self.db.get(Plan, sub.plan_id)
+            plan_included = plan.included_minutes if plan else 1000
 
-        # Sum minute packs added in the current period
-        packs = self.db.scalars(
-            select(MinutePack).where(
-                MinutePack.client_id == client_id,
-                MinutePack.created_at >= sub.period_start,
-                MinutePack.created_at <= sub.renews_on,
-            )
-        ).all()
-        extra_minutes = sum(p.minutes for p in packs)
-        minutes_limit = plan_included + extra_minutes
+            # Sum minute packs added in the current period
+            packs = self.db.scalars(
+                select(MinutePack).where(
+                    MinutePack.client_id == client_id,
+                    MinutePack.created_at >= sub.period_start,
+                    MinutePack.created_at <= sub.renews_on,
+                )
+            ).all()
+            extra_minutes = sum(p.minutes for p in packs)
+            minutes_limit = plan_included + extra_minutes
 
-        # Sum call minutes in current period
-        calls = self.db.scalars(
-            select(Call).where(
-                Call.client_id == client_id,
-                Call.created_at >= sub.period_start,
-                Call.created_at <= sub.renews_on,
+            # Sum call minutes in current period
+            calls = self.db.scalars(
+                select(Call).where(
+                    Call.client_id == client_id,
+                    Call.created_at >= sub.period_start,
+                    Call.created_at <= sub.renews_on,
+                )
+            ).all()
+            minutes_used = sum(minutes_for_call(c.duration) for c in calls)
+            cycle_str = (
+                sub.billing_cycle.value
+                if hasattr(sub.billing_cycle, "value")
+                else str(sub.billing_cycle)
             )
-        ).all()
-        minutes_used = sum(minutes_for_call(c.duration) for c in calls)
-        cycle_str = sub.billing_cycle.value if hasattr(sub.billing_cycle, "value") else str(sub.billing_cycle)
-        return self._summary(plan, cycle_str, sub.renews_on, minutes_limit, minutes_used)
+            billing = self._summary(
+                plan, cycle_str, sub.renews_on, minutes_limit, minutes_used
+            )
+
+        grace_percent = max(0, get_settings().overage_grace_percent)
+        billing["calls_paused"] = (
+            call_start_reason(
+                self.db.get(Client, client_id), billing, grace_percent
+            ) == "over_limit"
+        )
+        billing["pause_at_percent"] = 100 + grace_percent
+        return billing
 
     def get_billing_for_clients(self, client_ids: list[int]) -> dict[int, dict]:
         """Batch the monitoring billing calculation without creating subscriptions."""

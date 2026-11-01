@@ -83,6 +83,13 @@ class LinkedAgentItem(BaseModel):
 class ClientIntegrationOut(BaseModel):
     signed_event_webhook_url: str
     tool_url_patterns: dict[str, str]
+    header_tool_url_patterns: dict[str, str]
+    call_completed_url_pattern: str
+    call_completed_header_url_pattern: str
+    call_completed_header: str
+    call_start_url_pattern: str
+    call_start_header: str
+    tool_token_header: str
     urls_are_absolute: bool
     credential_exists: bool
     credential_created_at: datetime | None
@@ -94,4 +101,11 @@ class ClientIntegrationOut(BaseModel):
 class ClientToolTokenOut(BaseModel):
     token: str
     tool_urls: dict[str, str]
+    header_tool_urls: dict[str, str]
+    call_completed_url: str
+    call_completed_header_url: str
+    call_completed_header: str
+    call_start_url: str
+    call_start_header: str
+    tool_token_header: str
     urls_are_absolute: bool

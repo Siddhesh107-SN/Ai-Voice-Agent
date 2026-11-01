@@ -2,8 +2,8 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { useDash } from './store';
-import { Dialog, ModalHost } from './ui';
+import { useDash, type State } from './store';
+import { CopyButton, Dialog, ModalHost } from './ui';
 import { BotMark, Icon } from './icons';
 import { ApptForm } from './appointments';
 import { ConfirmLogoutDialog, PinDialog } from './views-tenant';
@@ -13,7 +13,59 @@ import type { Role } from './types';
 const IDLE_WARNING_MS = 28 * 60 * 1000;
 const IDLE_LOGOUT_MS = 30 * 60 * 1000;
 const STAFF_ADMIN_IDLE_MS = 15 * 60 * 1000;
-const isDemoMode = process.env.NEXT_PUBLIC_API_MODE === 'mock';
+const isDemoMode =
+  process.env.NODE_ENV !== 'production' &&
+  process.env.NEXT_PUBLIC_API_MODE === 'mock';
+
+function agentPhoneE164(phone: string): string {
+  return phone.replace(/[^\d+]/g, '');
+}
+
+function formatAgentPhone(phone: string): string {
+  const e164 = agentPhoneE164(phone);
+  return e164.startsWith('+91') && e164.length === 13
+    ? `${e164.slice(0, 3)} ${e164.slice(3, 8)} ${e164.slice(8)}`
+    : e164;
+}
+
+function AgentNumberBlock({ agents, loading, unavailable }: { agents: State['agents']; loading: boolean; unavailable: boolean }) {
+  const assigned = agents.filter((agent) => agent.phone);
+  const agent = assigned[0];
+  const statusAgent = agent || agents[0];
+  return (
+    <div style={{ margin: '0 8px 10px', padding: 10, borderRadius: 12, background: 'rgba(0,0,0,0.18)', color: '#F5E4D0', fontSize: 11 }}>
+      <b style={{ display: 'block', marginBottom: 4 }}>Your agent number</b>
+      {loading ? (
+        <span>Loading your agent number…</span>
+      ) : unavailable ? (
+        <span>Agent number could not be loaded.</span>
+      ) : agent ? (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span className="mono">{formatAgentPhone(agent.phone)}</span>
+            <CopyButton value={agentPhoneE164(agent.phone)} label="Copy" />
+          </div>
+          {assigned.length > 1 && (
+            <Link href="/dashboard/agents" style={{ display: 'inline-block', marginTop: 4, color: '#F5E4D0', textDecoration: 'underline' }}>
+              +{assigned.length - 1} more
+            </Link>
+          )}
+        </>
+      ) : (
+        <>
+          <span>Number not assigned yet</span>
+          <small style={{ display: 'block', opacity: 0.8 }}>Talkaor will assign your number.</small>
+        </>
+      )}
+      {!unavailable && statusAgent && (
+        <small style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
+          <i aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: statusAgent.online ? 'var(--ok)' : 'var(--bad)' }} />
+          {statusAgent.online ? 'Online' : 'Offline'}
+        </small>
+      )}
+    </div>
+  );
+}
 
 function IdleLogoutDialog({ onStay }: { onStay: () => void }) {
   const { logout } = useDash();
@@ -33,7 +85,7 @@ function IdleLogoutDialog({ onStay }: { onStay: () => void }) {
 }
 
 export function DashboardShell({ children }: { children: ReactNode }) {
-  const { s, isSA, can, setRole, setTheme, openModal, closeModal, set, toast, logout } = useDash();
+  const { s, isSA, can, setRole, setTheme, openModal, closeModal, set, toast, logout, dashboardError, dashboardLoaded, reload } = useDash();
   const path = usePathname();
   const router = useRouter();
   const lastActivityRef = useRef(Date.now());
@@ -90,7 +142,9 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     if (!isSA && onPlatform) router.replace('/dashboard');
   }, [isSA, onPlatform, router]);
 
-  const mine = s.agents.filter((a) => a.business_id === TENANT_ID);
+  const mine = isDemoMode
+    ? s.agents.filter((a) => a.business_id === TENANT_ID)
+    : s.agents;
   const tenant: [string, string, string, string][] = [
     ['/dashboard', 'Dashboard', 'grid', ''],
     ['/dashboard/appointments', 'Appointments', 'cal', String(s.appts.length)],
@@ -120,6 +174,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const active = (h: string) => (h === '/dashboard' || h === '/dashboard/platform' ? path === h : path.startsWith(h));
 
   const pick = (r: Role) => {
+    if (!isDemoMode) return;
     const userMap: Record<Role, { id: string; name: string; email: string; businessName: string }> = {
       staff: {
         id: 'u_staff',
@@ -144,14 +199,11 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     setRole(r);
     set((p) => ({
       ...p,
-      role: r,
-      elevated: false,
       user: {
         ...target,
         role: r,
       },
     }));
-    document.cookie = `tk_role=${r}; path=/; max-age=86400`;
     document.cookie = `tk_session_user=${target.id}; path=/; max-age=86400`;
     toast(`Switched to ${r === 'staff' ? 'Staff View (read-only)' : r === 'admin' ? 'Admin View (business owner)' : 'Super Admin (platform owner)'}`);
     router.push(r === 'super_admin' ? '/dashboard/platform' : '/dashboard');
@@ -241,6 +293,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               </button>
             </div>
           </div>}
+          {!isSA && <AgentNumberBlock agents={mine} loading={!dashboardLoaded && !dashboardError} unavailable={!dashboardLoaded && dashboardError} />}
 
           <nav style={{ display: 'grid', gap: 6 }}>
             {items.map(([href, label, icon, badge]) => (
@@ -263,7 +316,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           </button>
           <div className="scope">
             <small>Current scope</small>
-            <b>{isSA ? 'All businesses' : s.user?.businessName || 'Sunrise Dental Care'}</b>
+            <b>{isSA ? 'All businesses' : s.user?.businessName || 'Your Business'}</b>
             <small>Build v2.4</small>
           </div>
         </aside>
@@ -327,6 +380,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               )}
             </div>
           </div>
+          {dashboardError && (
+            <div className="card" role="alert" style={{ margin: '0 0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <span>Dashboard data could not be loaded. Check your connection and try again.</span>
+              <button type="button" onClick={() => void reload()}>Retry</button>
+            </div>
+          )}
           {children}
         </main>
       </div>

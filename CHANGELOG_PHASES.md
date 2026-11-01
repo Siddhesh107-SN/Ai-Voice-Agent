@@ -11,7 +11,7 @@
 - `.env.example` — documents backend settings, mail providers, Gunicorn, super-admin provisioning, and the isolated test database variable.
 - `README.md` — adds local backend/frontend startup steps and warns that backend tests drop and recreate their database schema.
 - `ai-calling-frontend/.env.example` — documents live/mock mode and frontend backend URL variables.
-- `ai-calling-frontend/README.md` — replaces obsolete mock-switch instructions with `NEXT_PUBLIC_API_MODE`.
+- The legacy frontend README was updated to use `NEXT_PUBLIC_API_MODE`; it is retired in Phase 5.5 because its remaining setup content is covered by the root README.
 - `app/otp_service.py` — defers Resend configuration reads until an OTP send is requested and raises a specific missing-key error.
 - `app/otp_routes.py` — maps missing OTP Resend configuration to HTTP 503.
 - `app/services/email_service.py` — adds a production-console configuration warning helper.
@@ -444,3 +444,301 @@ The complete `PUBLIC_ROUTES` set now contains:
      6. Switch to Client Admin, open **AI Voice Agents**, verify the assigned number and copy button, the customer-call explanation, and the active status. Verify there are no Add, Configure, Edit, or Unlink controls; test the power toggle.
      7. On the client dashboard, verify the Growth plan, `114 of 300 minutes left`, renewal date, normal progress color, and rounded-up-minute note. Switch to Staff and verify the same read-only phone and billing details.
      8. In non-mock/live mode, verify the role switcher is absent for clients and directly opening a `/dashboard/platform/...` route shows the access-denied state and redirects.
+
+## Phase 4A SARVAMFIT
+
+### Change report
+
+- Branch: `phase-2`; base commit: `356127636303a70edb0de27400640fae911038ce`. Commit: this report is included in `Phase 4A SARVAMFIT`; the new hash is reported in the delivery message.
+- Files changed:
+  - `.env.example` — documents `OVERAGE_GRACE_PERCENT`, defaulting to 10.
+  - `app/api/routes/sarvam_webhooks.py` — adds header-authenticated tool and call-completion routes, call-start gate route, and preserves existing path-token and signed-webhook routes.
+  - `app/core/config.py` — adds the overage grace setting.
+  - `app/integrations/sarvam/schemas.py` — adds a lenient call-completion payload schema; unknown fields are ignored and an interaction or attempt ID is required.
+  - `app/schemas/agent_link.py` — extends integration and one-time-token responses with header-based tool, call-completed, and call-start URL/header fields.
+  - `app/services/client_tool_credential_service.py` — builds the new relative or absolute integration/setup URLs without persisting or logging raw tokens.
+  - `app/services/sarvam_call_service.py` — adds sanitized, idempotent call processing and the fail-open service gate.
+  - `app/services/tool_call_log_service.py` — adds capped warning audit records for unlinked agents and denied call starts.
+  - `tests/test_agentlink_api.py` — verifies the additional integration and one-time setup fields.
+  - `tests/test_multi_tenant_security.py` — allowlists the new token-authenticated public routes in the existing route-structure test.
+  - `tests/test_sarvam_call_completed.py` — covers authentication/scope, idempotency, payload redaction, call mapping, billing, and ignored/unlinked cases.
+  - `tests/test_sarvam_call_start.py` — covers plan grace, suspension/inactivity, header authentication, audit, and fail-open behavior.
+  - `tests/test_sarvam_public_webhooks.py` — covers header/Bearer tool authentication, tenant isolation, legacy-token rejection, and validation-failure auditing.
+  - `CHANGELOG_PHASES.md` — records this phase and its setup/verification notes.
+  - No files were deleted.
+
+### Database and API
+
+- Database changes: none. Existing `calls`, `webhook_events`, and `audit_logs` tables are reused; no migration was added.
+- `POST /api/v1/webhooks/sarvam/{token}/{client_id}/call-completed` accepts a client token in the path. The path token takes precedence; this new route accepts only per-client credentials and does not accept the legacy shared token.
+- `POST /api/v1/webhooks/sarvam/{client_id}/call-completed` accepts the per-client token in `X-Webhook-Token` or `Authorization: Bearer ...`; it also rejects the legacy shared token. Invalid credentials retain the existing 404 behavior and create no rows. Unusable payloads return HTTP 200 with `status: ignored`; successful and repeated deliveries return `processed` and `duplicate`.
+- The lenient callback schema accepts `app_id`, `interaction_id`, `attempt_id`, caller/dialed number fields, duration, completion/connectivity statuses, timestamps, transcript, variables, and metadata. Unknown fields—including any undeclared event type or recording URL—are ignored. `interaction_id` is the call's provider ID when present; `event_id` uses the interaction ID or, otherwise, attempt ID.
+- Calls are resolved only inside the authenticated client, first by provider agent ID and then by agent phone. Inbound/outbound direction and caller phone are mapped from the payload. Positive connected durations are rounded up to whole seconds and stored as billable completed calls. Failed or unconnected calls retain a non-completed status and null duration. Payloads stored in `webhook_events` are passed through the existing Phase 2A sanitizer. An unlinked agent does not prevent call storage and generates a capped warning audit entry containing its `app_id`.
+- Header-only `POST /api/v1/webhooks/sarvam/{client_id}/appointments/{check-slot|book|reschedule|cancel}` routes accept `X-Tool-Token` or Bearer credentials, are client-scoped, and reject the legacy shared token. Existing token-in-path appointment routes retain their prior behavior, including the configured legacy-token transition.
+- `POST /api/v1/webhooks/sarvam/{client_id}/call-start` accepts `X-Tool-Token` or Bearer credentials and returns `service_active`, `reason`, `business_name`, `plan`, and `minutes_remaining`. It uses `BillingService`'s current-period plan allowance and minute packs, blocks suspended/inactive clients and usage at or above the configured grace threshold, and returns `reason: ok` if an unexpected gate error occurs. Denials are audit-logged under the existing per-client cap; this endpoint does not create a call row.
+- New call-completed and call-start routes are limited to 30 requests per minute per IP; new header-based tool routes are limited to 60 per minute per IP.
+- `GET /api/v1/admin/clients/{client_id}/integration` now includes header-based tool URL patterns, call-completed path-token and header URL patterns, the call-completed/header names, and call-start URL/header fields. `POST /api/v1/admin/clients/{client_id}/tool-token` now returns both header-tool URLs and ready-to-use call-completed/call-start setup URLs and header names with the raw token. Existing super-admin authorization is unchanged.
+- The signed `POST /api/v1/webhooks/sarvam` route and its HMAC behavior were not changed. No Sarvam provider calls were made.
+
+### Configuration, tests, and remaining work
+
+- `OVERAGE_GRACE_PERCENT` defaults to 10; the gate blocks at 110% of included minutes plus current-period minute packs. `PUBLIC_API_BASE_URL` continues to control whether setup URLs are absolute; no secret values were added.
+- Setup: configure `PUBLIC_API_BASE_URL` to the public API origin, generate a per-client token from the super-admin token endpoint, and copy it directly into Sarvam. Use the header-tool URLs with `X-Tool-Token`; configure call-completed with either the one-time token-path URL or the header URL plus `X-Webhook-Token`. The call-start URL accepts `X-Tool-Token`. Once all clients have individual credentials, disable the legacy shared token on the server.
+- `python -m compileall app tests` passed. `git diff --check` passed. Pytest, database, Docker, and Alembic commands were not run; tests were added for CI.
+- No dependencies or frontend files changed.
+- Payload assumptions: `attempt_id` identifies outbound calls; callbacks with neither a usable caller number nor interaction/attempt ID are ignored. Both `from_number`/`to_number` and common caller/dialed aliases are accepted. `recording_url` is deliberately not inferred from the payload. The existing database has a global `(provider, event_id)` unique constraint; cross-tenant collisions are safely ignored rather than altering another tenant's webhook event.
+
+## Phase 4B MINUTECUT-UI
+
+### Change report
+
+- Branch: `phase-2`; base commit: `63c40278470318333c42ee8ea8206a8b0a9284c0`. Commit message: `Phase 4B MINUTECUT-UI`; the resulting hash is reported in the delivery message.
+- Files changed:
+  - `.gitignore` — ignores `.vscode/`.
+  - `.vscode/settings.json` — was tracked; removed from the Git index as requested and retained locally.
+  - `docs/SARVAM_SETUP.md` — adds placeholder-only Sarvam configuration, testing, legacy-token retirement, and troubleshooting steps, with console limitations noted.
+  - `ai-calling-frontend/src/features/dashboard/api.ts` — consumes the additive admin/billing data, removes per-client Integration fetches from the platform agent list, and adds mock billing states.
+  - `ai-calling-frontend/src/features/dashboard/mock.ts` — adds Phase 4A URL/header samples and monitoring signals for mock mode.
+  - `ai-calling-frontend/src/features/dashboard/types.ts` — models integration setup URLs/headers, billing pause fields, and monitoring indicators.
+  - `ai-calling-frontend/src/features/dashboard/views-logwatch.tsx` — displays blocked-call and legacy-token indicators.
+  - `ai-calling-frontend/src/features/dashboard/views-platform.tsx` — displays header-based tool, call-completed, and call-start setup details and one-time URLs.
+  - `ai-calling-frontend/src/features/dashboard/views-tenant.tsx` — shows the assigned phone and status, places plan/credit information on the client dashboard, and renders each billing state.
+  - `app/schemas/admin.py` — adds agent-list and monitoring response fields.
+  - `app/schemas/billing.py` — adds `calls_paused` and `pause_at_percent` to the billing response.
+  - `app/services/admin_service.py` — populates agent token presence and batched monitoring audit aggregates.
+  - `app/services/billing_service.py` — shares the call-start decision logic and returns the additive pause fields.
+  - `app/services/sarvam_call_service.py` — uses the shared call-start decision helper.
+  - `tests/test_agentlink_api.py` — tests agent-list additions and client-scoped credential presence.
+  - `tests/test_b2_features.py` — tests billing pause thresholds, old billing fields, and tenant scoping.
+  - `tests/test_logwatch_api.py` — tests the 24-hour blocked-call and 7-day legacy-token aggregates.
+
+### Database, API, and configuration
+
+- Database changes: none. No migrations or schema changes.
+- `GET /api/v1/admin/agents` adds `provider_agent_id`, `status`, and `tool_token_exists`; `phone_number` was already returned and remains available. All existing response fields are unchanged. The token-presence lookup is batched, and the platform list no longer makes per-client Integration calls.
+- `GET /api/v1/billing/me` adds `calls_paused` and `pause_at_percent`; existing response fields are unchanged. `calls_paused` reuses the call-start gate decision and is true only for the over-limit pause reason.
+- `GET /api/v1/admin/monitoring` adds `blocked_calls_24h` and `legacy_token_in_use`; existing response fields are unchanged. Aggregates are grouped by client in one query for the current page.
+- No routes were added or changed. The frontend now consumes the Phase 4A `GET /api/v1/admin/clients/{client_id}/integration` URL/header fields and the corresponding `POST /api/v1/admin/clients/{client_id}/tool-token` response fields. Those existing response shapes are unchanged.
+- Public Sarvam route rate limits were checked and already exist: both call-completed variants and call-start are limited to 30 requests/minute/IP; each of the four header-based tool routes is limited to 60 requests/minute/IP. The existing signed webhook remains limited to 120 requests/minute/IP. No rate-limit change was necessary.
+- Environment variables and other configuration: unchanged. No dependencies were added. `.vscode/` was tracked before this change and is now ignored.
+
+### Role behavior, tests, and remaining work
+
+- Super admin: Agent links show provider agent ID, status, phone, and token presence from the agent-list endpoint. Integration displays the Phase 4A URLs, headers, token metadata, copy controls, and legacy-token help; token material remains component state and appears only in the one-time modal.
+- Client admin and staff: Dashboard shows the assigned phone/status and billing minutes/pause state. Agent creation/deletion/editing remains unavailable to clients; the existing power toggle sends only `{status}`. Super-admin adapters continue to reject client roles.
+- Mock mode: includes normal, 80% warning, 100% limit, and paused billing samples, selectable from the dashboard billing card. Integration URL and header samples remain relative.
+- The billing API exposes the existing `plan` key (for example, `growth`) but does not expose a separate display-name field; the dashboard displays the returned value rather than inventing a plan name.
+- Tests added or extended: `test_admin_agent_list_includes_link_fields_and_client_token_presence`, `test_billing_me_success_and_alerts`, `test_billing_pause_fields_are_scoped_to_the_signed_in_tenant`, and `test_monitoring_adds_blocked_call_and_legacy_token_aggregates`.
+- Verification: Python AST parsing passed for all eight modified Python files; `git diff --check` passed. Pytest, database commands, npm install, and frontend build were not run as requested; build and tests remain for CI.
+- The Sarvam console steps are documented with placeholders only. Exact console controls, secret-reference syntax, and response-to-variable mapping depend on Sarvam behavior that this repository cannot verify.
+
+## Phase 4C DEMOCLEAN
+
+### CHANGE REPORT
+
+1. Branch: `phase-2`; base commit: `9bb9fe128a1e8738a830b7989f55c509fc39db62`. The new commit hash is in the delivery summary because this changelog entry is part of that commit.
+2. Demo surface inventory:
+   - `ai-calling-frontend/src/middleware.ts:10-27` — previously accepted `?role=` and `NEXT_PUBLIC_DASH_SIMULATE` to select/bypass roles. Removed both; live dashboard role routing now uses the auth-set role cookie, and mock mode alone bypasses login for previews.
+   - `ai-calling-frontend/src/lib/http.ts:67-105` — the authenticated user role was persisted inside `tk_user` in localStorage. `getUserRole()` now reads the auth-set role cookie, and login clears the old localStorage value so localStorage cannot switch the live UI/API role.
+   - `ai-calling-frontend/src/app/dashboard/layout.tsx:11-14` — previously used `NEXT_PUBLIC_DASH_SIMULATE` to suppress appointment polling. It now follows `NEXT_PUBLIC_API_MODE=mock`.
+   - `ai-calling-frontend/src/features/dashboard/shell.tsx:16-18, 174-202, 294, 327-337` — role selectors and fixture identities remain available only in mock mode; client roles get a compact assigned-number block in either mode. The online indicator, exact-number copy, extra-number link, and unassigned/error states are live-safe.
+   - `ai-calling-frontend/src/features/dashboard/views-tenant.tsx:137, 261` — mock billing-state selector remains mock-only; fake Call/WhatsApp toast buttons are now mock-only and are absent in live mode.
+   - `ai-calling-frontend/src/features/dashboard/views-tenant.tsx:165-214` — dashboard previously displayed fixed `342` calls, `128` customers, and a hardcoded weekly chart. Live mode now derives counts from loaded records and does not render the mock chart.
+   - `ai-calling-frontend/src/features/dashboard/views-platform.tsx:33-60` — platform revenue history used hardcoded monthly values; those are now mock-only, and live mode shows no invented history.
+   - `ai-calling-frontend/src/features/dashboard/appointments.tsx:34-40` — the fabricated customer contact fallback is now used only in mock mode; live booking requires an existing customer.
+   - `ai-calling-frontend/src/components/talkaor-flow/PaymentView.tsx:82` — the `test@talkaor.com` fallback was removed; it was not displayed, but could be passed as payment state.
+   - `ai-calling-frontend/src/lib/server/session.ts:18-22` and `src/features/dashboard/store.tsx:99-108` — sample profile emails/names were removed from the live fallback state.
+   - `ai-calling-frontend/src/features/dashboard/mock.ts:16, 85, 135-176` — sample dashboard, webhook, and tool-call records remain mock fixtures; adapters load them only when mock mode is enabled. They are not live-request fallbacks.
+   - `ai-calling-frontend/src/components/TryIt.tsx:7-56`, `src/data/scenes.ts:97,124`, `src/app/(marketing)/page.tsx:7,22` — the public interactive product demo and its sample scenarios are visible in live marketing mode and are intentionally retained; they do not sign in or link to a demo dashboard.
+   - `ai-calling-frontend/src/components/WhoFor.tsx:89-93` and `src/app/globals.css:266-267` — the marketing `demo-line` animation is visible live but is only a styling class, not demo data or a role control.
+   - `ai-calling-frontend/src/app/onboarding-status/preview/page.tsx:7-104` and `src/components/onboarding-status/StatusView.tsx:123` — sample status scenarios are dev-preview-only; the preview route returns not-found in production.
+   - The legacy mock-only auth form includes a demo success message but has no imports/usages in the app, so it is not visible in login/signup or live routes; it is retired in Phase 5.5.
+   - `ai-calling-frontend/.env.example:11-12` — legacy `NEXT_PUBLIC_DASH_SIMULATE` entry is retained but marked ignored. The live LoginView and SignupView have no sample credentials, demo-account shortcuts, or demo links; no demo password was found.
+3. Files changed:
+   - `.env.example` — marked `NEXT_PUBLIC_DASH_SIMULATE` as ignored and documented mock mode as the preview switch.
+   - `src/app/dashboard/layout.tsx` — ties appointment polling simulation to mock mode and uses a generic business label.
+   - `src/middleware.ts` — removes query-role selection and the development simulation bypass.
+   - `src/features/dashboard/shell.tsx` — mock-gates both role selectors; adds the compact client phone/status/copy block and visible dashboard-load error/retry.
+   - `src/features/dashboard/store.tsx` — prevents role mutation outside mock mode and exposes initial/polling data failures instead of silently hiding them.
+   - `src/features/dashboard/api.ts` — lets a failed business-data request reach the dashboard error state instead of converting it to a successful empty fallback.
+   - `src/features/dashboard/views-tenant.tsx` — hides fake customer actions outside mock mode, removes sample-name fallback and fixed live metrics, and suppresses the mock weekly chart in live mode.
+   - `src/features/dashboard/views-platform.tsx` — hides invented historical revenue values outside mock mode.
+   - `src/features/dashboard/appointments.tsx` — limits fake customer contact data to mock mode.
+   - `src/lib/server/session.ts` — removes a hardcoded sample email from the dashboard profile.
+   - `src/lib/http.ts` — removes persisted role data from localStorage and sources `getUserRole()` from the auth-set cookie.
+   - `src/components/talkaor-flow/PaymentView.tsx` — removes the fallback test email.
+   - `CHANGELOG_PHASES.md` — records this phase and its demo-surface inventory.
+   - No files were created or deleted.
+4. Database/API changes: none. No backend file changed. No dependencies were added. Failed live dashboard loads now show an error and retry control; live failures do not fall back to mock data. The live call response/model has no call timestamp for a truthful weekly calls chart, so live mode explains that gap instead of drawing fixture data.
+5. No runtime environment variables were added or changed. `NEXT_PUBLIC_DASH_SIMULATE` is no longer read by source code; it remains in `.env.example` only as a documented ignored legacy entry. `NEXT_PUBLIC_API_MODE=mock` remains the mock switch. The frontend does not persist role or phone data in localStorage/sessionStorage; the existing authenticated role cookie remains the role source.
+6. Behavior:
+   - Live super admin: no role-switching control; the existing platform role label and route/API guards remain.
+   - Live client admin/staff: no role switcher; shell shows the first assigned phone number, readable formatting, exact E.164 copy, online/offline state, and `+N more` when applicable. Missing numbers show the assignment hint; failed loads show an error instead.
+   - Mock mode: role switchers and fixture data remain; client admin/staff also see the number block. Fake customer action toasts and billing preview remain mock-only.
+7. Verification: no build, npm, or tests were run as requested. `git diff --check` passed.
+8. Manual checks: in live mode, sign in as each role; confirm no role selector, verify each client’s number/copy/status/more link or unassigned hint, try `?role=super_admin` and confirm it does not change role, and open a platform URL as a client to confirm redirect/denial. Simulate an API failure and confirm the error/retry state appears without fixtures. In mock mode (`NEXT_PUBLIC_API_MODE=mock`), verify the switcher remains usable for each role, client number block appears, and `NEXT_PUBLIC_DASH_SIMULATE` has no effect. No backend behavior or API endpoints were changed. The existing Next.js route guard still relies on the client-readable `tk_role` cookie set after authentication; backend APIs remain authoritative. A server-verified/HttpOnly session would require auth/backend work outside this frontend-only scope.
+## Phase 5 FINALCHECK
+
+### Audit summary
+
+- **Migrations:** Revisions `0001`–`0011` form a single linear chain with `0011`
+  as the static head. `0010` has an unguarded `request_id` column addition;
+  `0011` creates objects without existence guards and automatically nulls
+  later agents with duplicate digit-normalized phone numbers. Downgrades are
+  not uniformly lossless; `0005` conditionally adds columns but its downgrade
+  drops them unconditionally, `0011` removes client tool credentials, and
+  `0008` can fail when public enquiries have a NULL `client_id`.
+- **Configuration:** Backend settings and direct environment reads are
+  documented in `.env.example`; frontend settings are in
+  `ai-calling-frontend/.env.example`. Production startup validates the JWT
+  secret length/prefix and presence of the PIN encryption key, but not every
+  operational setting. `EMAIL_BACKEND=console` does not deliver email.
+- **Public routes:** Public APIs include health, auth entry points, plans,
+  contact, and Sarvam callbacks/tools. Rate limits exist on several routes,
+  but path-token tool callbacks and the shared-token outbound callback have
+  no explicit per-route limit. Contact and callback endpoints can create
+  rows; their caps differ by route.
+- **Tenant isolation:** Authenticated tenant access generally scopes by the
+  token-derived client ID. Public contact enquiries intentionally have
+  `client_id = NULL` and are visible to super-admin message views, not tenant
+  users. Refresh tokens and email-verification records are user-scoped.
+- **Billing:** Plans include 300, 1,000, and 2,500 minutes; minute packs add to
+  the current period, and each completed `Call` is rounded up to whole
+  minutes. Call-start gating uses `OVERAGE_GRACE_PERCENT`, but the gate fails
+  open on selected errors/missing client data and does not reserve concurrent
+  usage. `CallAttempt` is not included in the billed-minute sum.
+- **Sarvam:** Per-client completion callbacks create/update the billed `Call`
+  record and webhook event; admin Monitoring and Webhook events consume these
+  records. Payload fields, identifier stability, response mapping, retry
+  behavior, and provider header support remain assumptions to verify in the
+  Sarvam console. The legacy signed webhook and shared-token outbound route
+  are not disabled by `SARVAM_LEGACY_SHARED_TOKEN_ENABLED=false`. The legacy
+  webhook stores the raw provider payload; review/redact fields before retaining
+  it if the provider can include credentials or unnecessary personal data.
+- **Email/OTP:** The frontend uses database-backed authenticated
+  `/auth/verify-email/*`; root-mounted in-memory `/auth/send-otp` and
+  `/auth/verify-otp` remain legacy flows. Keep the database-backed flow and
+  retire the unused OTP flow after confirming no external clients depend on
+  it. A console backend sends no email, and a missing Resend key prevents
+  delivery.
+- **Frontend/API:** The initial dashboard fetch requests tenant-only business
+  and appointment endpoints even for super-admin, producing a dashboard-load
+  failure. Call list/detail schemas include `started_at` and `duration`, but
+  the frontend adapter omits `started_at`; a weekly chart can use the existing
+  API data after frontend wiring. Forgot-password links to a missing
+  frontend page and the backend does not implement a reset-email flow.
+- **Session/security:** The middleware and server dashboard layout trust
+  editable `tk_role` and `tk_session_user` cookies for UI routing; backend APIs
+  still enforce bearer-token roles. Auth/elevation tokens are stored in
+  localStorage. Gunicorn access paths can contain legacy URL tokens. The
+  super-admin PIN view/reset responses return PINs; replace with a non-
+  disclosure reset/credential workflow.
+- **Repository/security:** Git history contains sensitive-file names
+  (`.env`, `.env.local`, `.vscode/settings.json`, and
+  `ai-calling-frontend/backend/talkaor.db`); contents were not inspected.
+  Rotate any real credentials that may have been committed and remove
+  sensitive history through the repository's approved process. CORS is
+  origin-configured, but production must use exact trusted origins. The
+  development console email backend logs verification codes; keep it out of
+  production and avoid collecting development logs. `APP_ENV=production`
+  does not force `DEBUG=false`; a misconfigured production instance can expose
+  debug tracebacks.
+- **Coverage/dead code:** CI runs backend pytest against PostgreSQL 16 and
+  applies migrations; the frontend gets a production build only, with no
+  frontend test suite. Legacy OTP components/routes, the unused mock auth form,
+  root duplicate API mounts, `NEXT_PUBLIC_DASH_SIMULATE` documentation, and
+  the unused landing-page copy merit removal or explicit compatibility
+  decisions. Current frontend has a business/appointment role mismatch.
+
+### Documentation and verification
+
+- Added `docs/DEPLOY_RUNBOOK.md` with process-manager alternatives, production
+  environment placeholders, migration preflight, Sarvam cutover, checks, and
+  rollback cautions.
+- Reworked `README.md` for architecture, local setup, CI coverage, and docs.
+- No application code, tests, migrations, workflows, or dependencies were
+  changed. No tests, database, Docker, npm install, or frontend build were run.
+
+### Security follow-up
+
+- Added migration `0012` for hashed one-time password-reset codes and an
+  `auth_version` counter. Reset codes expire, are attempt-limited and
+  single-use; successful resets revoke refresh tokens and invalidate existing
+  access tokens. The forgot-password response does not reveal account
+  eligibility, and email delivery runs after the response.
+- Replaced the PIN reveal endpoint and PIN-bearing responses with a reset-only
+  interface. Added per-IP rate limits to the root OTP routes, path-token
+  Sarvam tools, and the shared-token outbound callback.
+- Removed request targets from Gunicorn access logs, suppresses verification
+  codes from console logs, and rejects `DEBUG=true` in production.
+- Added a server-verified dashboard session cookie, with the signing secret
+  documented in the frontend environment example. Existing browser tokens
+  remain in localStorage as requested.
+- Added the frontend password-reset flow and backend tests for public
+  responses, cross-user isolation, one-time code use, password changes, and
+  session invalidation.
+- No PostgreSQL-dependent tests, migrations, Docker commands, dependency
+  installs, or frontend builds were run in this follow-up.
+- The production warning and legacy-token flag now also cover the shared-token
+  Sarvam `/outbound` callback. Gunicorn access logs omit request paths; direct
+  Uvicorn deployments must use `--no-access-log`, and Nginx must be configured
+  to omit token-bearing request targets.
+- Path-token and header-token Sarvam appointment routes now share undecorated
+  operation helpers and each apply their own 60/minute limit; this avoids
+  directly calling a SlowAPI-wrapped route handler from the header variant.
+- Super-admin initial loads now fetch platform-only data and skip tenant
+  appointment polling. Updated the runbook with secret-rotation guidance and
+  clarified the changed `SARVAM_LEGACY_SHARED_TOKEN_ENABLED` behavior.
+
+# Phase 5.5 CLEANUP
+
+## Change report
+
+- Branch: `phase-2`
+- Base commit: `b2158699ff5faef63f98a375e048818311026a11`
+- Commit: `Phase 5.5 CLEANUP` (hash is recorded in Git metadata and the chat report).
+- No kept file was moved or renamed.
+
+## Markdown inventory
+
+| File | Description and reference status | Decision |
+|---|---|---|
+| `README.md` | Current architecture, local development, CI tests and docs; referenced by Compose, documentation, and the other READMEs. | Keep; it already covers valid frontend setup, so no merge was needed. |
+| `ai-calling-frontend/README.md` | Legacy frontend overview with outdated demo accounts, folder layout, endpoint contract and setup; only historically referenced by this changelog. | Deleted; no current setup information was missing from root README. |
+| `TALKAOR_CODEBASE_REPORT.md` | 1,297-line report describing an obsolete nested backend, old API contracts and stale repository structure; no inbound reference. | Deleted. |
+| `AGENTS.md` | Backend and agent-development instructions; loaded by convention rather than an in-repository link. | Keep. |
+| `CHANGELOG_PHASES.md` | Historical implementation/change record; linked by root README. | Keep and append this report. |
+| `docs/SARVAM_SETUP.md` | Sarvam integration setup; referenced from root README, deployment runbook and changelog. | Keep. |
+| `docs/DEPLOY_RUNBOOK.md` | EC2 deployment and operations instructions; referenced from root README. | Keep. |
+
+## Deleted files
+
+| Path | Size | Why safe | Test/document reference updates |
+|---|---:|---|---|
+| `ai-calling-frontend/README.md` | 279 lines | Legacy setup/design/API guidance is stale; root README already gives current architecture, mock mode, local run instructions, CI and documentation links. Not loaded by code or tooling. | Updated its historical changelog wording; no test or runtime references. |
+| `TALKAOR_CODEBASE_REPORT.md` | 1,297 lines | Stale report includes a separate SQLite backend and structures not present in the current app; no inbound code, CI, Docker, docs, or config reference. | No inbound references or tests. |
+| `ai-calling-frontend/src/components/AuthForm.tsx` | 32 lines | No import, dynamic import, route, or test reference outside itself; it is not a Next.js convention file. `LoginView`/`SignupView` are the current auth screens. | Generalized two historical changelog mentions; no tests referenced it. `forms.tsx` remains because `ContactForm.tsx` imports it. |
+| `.coverage` | 69,632 bytes | Generated coverage database, not imported or runtime-loaded. | Already ignored by `.gitignore` and `.dockerignore`; no tests or docs referenced the artifact. |
+
+## Other inventory findings
+
+- No tracked backup/copy files, Python bytecode/cache files, logs, `.db`, `.sqlite`, or `.sqlite3` files were found in the current index. `.coverage` was the only tracked generated artifact found. The ignore rules already cover the generated coverage/cache/database patterns.
+- Public frontend assets inspected (`poster.jpg`, `call-loop.mp4`, `Armany-Regular.otf`, and `qr-placeholder.svg`) have source-code/configuration references; no unused public asset was identified.
+- `forms.tsx`, marketing components, page/layout/route files, frontend mock data, and the TryIt demo are referenced or runtime/convention-loaded and were retained.
+- Backend route modules are imported and registered through `app/api/router.py`; `app/main.py` also mounts root aliases and the legacy OTP router. No backend module or test was deleted.
+- Remaining exact deleted-path mentions in this section are intentional inventory/history records, not links, imports, or runtime references. The removed README/AuthForm historical references elsewhere in the changelog were generalized.
+
+## Needs a decision
+
+- **In-memory OTP flow:** `app/otp_routes.py` registers `/auth/send-otp` and `/auth/verify-otp`; `app/otp_service.py` holds hashed codes in process memory with expiry/attempt checks and sends through Resend; `OtpStep.tsx` calls those routes but has no current component import. The verify route does not mark database email verification. Preserved as requested. Decide later whether to integrate it with signup or retire it.
+- **Legacy Sarvam routes:** path-token appointment tools, shared-token `/outbound`, and signed `/api/v1/webhooks/sarvam` remain registered and are referenced by tests/docs or provider compatibility. Preserved as requested. Check provider/client usage before a separate disable/removal phase.
+- **Legacy static landing-page archive:** `ai-calling-frontend/existing-landing-page/` is not served/imported by the current Next.js app, but `tsconfig.json` excludes it and the legacy README described it as preserved source. Retained by user decision; decide later whether it remains useful.
+- **Root API aliases:** `app/main.py` separately mounts API routers without `/api/v1`; these may be compatibility paths. Preserve and check deployed consumers before considering retirement.
+
+## Verification
+
+- Deleted names/import paths were searched repository-wide. Remaining references are intentional in this cleanup inventory; no executable imports or links to removed docs remain.
+- Confirmed `app/api/router.py` and `app/main.py` still point only to existing route modules; Next.js page/layout/route files and asset imports were not deleted.
+- `.gitignore` already covers `.coverage`, `__pycache__`, `.pyc`, and local database files.
+- Only deletions and this required changelog edit are expected in the worktree; no kept file path changed.
+- `python -m compileall app tests` and Git whitespace/status checks are the only validation commands permitted in this phase. Pytest, database, Docker, Alembic, npm, and frontend build checks were not run; CI should verify those flows and confirm Next.js has no missing module or asset reference.

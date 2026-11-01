@@ -20,6 +20,5 @@ max_requests_jitter = 100
 
 accesslog = "-"
 errorlog = "-"
-# Default access log format omits query strings and bodies, so it never captures tokens,
-# passwords, or other request content — only method, path, status, and timing.
-access_log_format = '%(h)s "%(r)s" %(s)s %(L)s'
+# Omit the request target because legacy integration routes carry credentials in their paths.
+access_log_format = '%(h)s "%(m)s" %(s)s %(L)s'

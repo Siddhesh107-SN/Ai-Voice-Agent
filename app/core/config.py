@@ -1,7 +1,7 @@
 """Application settings loaded from environment variables / .env."""
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,10 +26,12 @@ class Settings(BaseSettings):
     sarvam_webhook_secret: str = ""
     sarvam_legacy_shared_token_enabled: bool = True
     public_api_base_url: str = ""
+    overage_grace_percent: int = 10
 
     default_timezone: str = "Asia/Kolkata"
     cors_origins: str = ""
     rate_limit_enabled: bool = True
+    trusted_proxy_count: int = Field(default=0, ge=0)
 
     upload_dir: str = "uploads"
 
@@ -52,7 +54,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_production_secrets(self) -> "Settings":
-        if self.app_env == "production":
+        if self.app_env.strip().lower() == "production":
+            if self.debug:
+                raise ValueError("DEBUG must be false in production")
             if self.jwt_secret_key.startswith("change-me") or len(self.jwt_secret_key) < 32:
                 raise ValueError("JWT_SECRET_KEY must be a strong secret (32+ chars) in production")
             if not self.pin_encryption_key:

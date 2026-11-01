@@ -12,6 +12,7 @@ from app.models.customer import Customer
 from app.models.email_verification import EmailVerification
 from app.models.enquiry import Enquiry
 from app.models.payment import Payment
+from app.models.password_reset_code import PasswordResetCode
 from app.models.plan import MinutePack, Plan, Subscription
 from app.models.refresh_token import RefreshToken
 from app.models.staff_pin import PinAttempt, StaffPin
@@ -21,5 +22,5 @@ from app.models.webhook_event import WebhookEvent
 __all__ = [
     "Agent", "Appointment", "AppointmentHistory", "AuditLog", "BusinessHour", "Call",
     "CallAttempt", "Cancellation", "Client", "ClientToolCredential", "Customer", "EmailVerification", "Enquiry", "MinutePack", "Payment",
-    "PinAttempt", "Plan", "RefreshToken", "Service", "StaffMember", "StaffPin", "Subscription", "User", "WebhookEvent",
+    "PasswordResetCode", "PinAttempt", "Plan", "RefreshToken", "Service", "StaffMember", "StaffPin", "Subscription", "User", "WebhookEvent",
 ]

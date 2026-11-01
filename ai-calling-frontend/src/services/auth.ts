@@ -1,4 +1,4 @@
-import { http, setSessionCookies, setTokens } from "@/lib/http";
+import { ApiError, http, setSessionCookies, setTokens } from "@/lib/http";
 
 export interface SignupPayload {
   businessName: string;
@@ -49,12 +49,11 @@ export async function signupUser(payload: SignupPayload): Promise<AuthResponse> 
   const user = res.user || res.data?.user;
   const tokens = res.tokens || res.data?.tokens;
 
-  if (tokens?.access_token) {
-    setTokens(tokens.access_token, tokens.refresh_token);
+  if (!tokens?.access_token || !user) {
+    throw new ApiError("The server did not return a complete authenticated session.", 502, "INVALID_AUTH_RESPONSE");
   }
-  if (user) {
-    setSessionCookies(user);
-  }
+  setTokens(tokens.access_token, tokens.refresh_token);
+  await setSessionCookies(user, tokens.access_token);
 
   return {
     success: true,
@@ -78,12 +77,11 @@ export async function loginUser(payload: LoginPayload): Promise<AuthResponse> {
   const user = res.user || res.data?.user;
   const tokens = res.tokens || res.data?.tokens;
 
-  if (tokens?.access_token) {
-    setTokens(tokens.access_token, tokens.refresh_token);
+  if (!tokens?.access_token || !user) {
+    throw new ApiError("The server did not return a complete authenticated session.", 502, "INVALID_AUTH_RESPONSE");
   }
-  if (user) {
-    setSessionCookies(user);
-  }
+  setTokens(tokens.access_token, tokens.refresh_token);
+  await setSessionCookies(user, tokens.access_token);
 
   const isSuper = user?.role === "super_admin";
   const isActive = user?.access_status === "active";

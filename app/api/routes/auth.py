@@ -1,13 +1,16 @@
 from fastapi import APIRouter, Request, Response, status
 
 from app.core.dependencies import CurrentUser, DbSession
+from app.core.exceptions import ServiceUnavailableError
 from app.core.rate_limit import LOGIN_LIMIT, REFRESH_LIMIT, REGISTER_LIMIT, limiter
+from app.services.email_service import EmailConfigurationError
 from app.schemas.auth import (AuthData, ChangePasswordRequest, ForgotPasswordRequest,
-                              LoginRequest, LogoutRequest, RefreshRequest,
+                              LoginRequest, LogoutRequest, RefreshRequest, ResetPasswordRequest,
                               RegisterRequest, TokenPair)
 from app.schemas.common import ApiResponse
 from app.schemas.user import UserOut
 from app.services.auth_service import AuthService
+from app.services.password_reset_service import PasswordResetService
 
 router = APIRouter()
 
@@ -64,7 +67,35 @@ def change_password(request: Request, body: ChangePasswordRequest, user: Current
 
 @router.post("/forgot-password", response_model=ApiResponse[dict])
 @limiter.limit(LOGIN_LIMIT)
-def forgot_password(request: Request, body: ForgotPasswordRequest, db: DbSession):
-    """Request password reset. Rejected with 403 for protected accounts."""
-    res = AuthService(db).forgot_password(body.email, _ip(request))
-    return ApiResponse(message=res["message"], data={"status": "sent"})
+def forgot_password(
+    request: Request,
+    body: ForgotPasswordRequest,
+    db: DbSession,
+):
+    """Request a one-time email code without revealing whether an account is eligible."""
+    try:
+        pending = AuthService(db).forgot_password(body.email, _ip(request))
+    except EmailConfigurationError as exc:
+        raise ServiceUnavailableError(
+            "Password reset email is temporarily unavailable",
+            error_code="EMAIL_DELIVERY_UNAVAILABLE",
+        ) from exc
+    if pending:
+        PasswordResetService(db).deliver_code(*pending)
+    return ApiResponse(
+        message="If this email is eligible, password-reset instructions have been sent.",
+        data={"status": "sent"},
+    )
+
+
+@router.post("/reset-password", response_model=ApiResponse[dict])
+@limiter.limit(LOGIN_LIMIT)
+def reset_password(request: Request, body: ResetPasswordRequest, db: DbSession):
+    """Consume a one-time reset code and revoke the user's refresh sessions."""
+    PasswordResetService(db).reset_password(
+        body.email, body.code, body.new_password, _ip(request)
+    )
+    return ApiResponse(
+        message="Password reset successfully",
+        data={"status": "reset"},
+    )

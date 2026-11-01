@@ -16,6 +16,7 @@ node_modules/
 _incoming-frontend/
 ai-calling-frontend/backend/
 final-review.md
+.vscode/
 
 # Python caches and test artifacts
 __pycache__/

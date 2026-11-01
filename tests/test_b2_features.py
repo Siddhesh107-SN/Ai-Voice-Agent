@@ -20,7 +20,8 @@ from app.models.enums import AccessStatus, CallDirection, CallStatus, PlanKey
 from app.models.plan import MinutePack, Plan, Subscription
 from app.services.billing_service import minutes_for_call
 from tests.helpers import (auth_headers, create_staff, elevated_headers,
-                           login_token, make_elevation_token, register, register_ok)
+                           login_token, make_call, make_elevation_token,
+                           register, register_ok)
 
 
 # ---------------- 1. MINUTES CALCULATION ----------------
@@ -118,6 +119,8 @@ def test_billing_me_success_and_alerts(client, db):
     assert data["alert"] == "none"
     assert data["next_payment_amount"] == 5700
     assert data["renews_on"] is not None
+    assert data["calls_paused"] is False
+    assert data["pause_at_percent"] == 110
 
     # Simulate calls to test warning alert (>= 80%)
     # Add a call with 800 minutes = 48000 seconds
@@ -157,6 +160,23 @@ def test_billing_me_success_and_alerts(client, db):
     assert data_limit["minutes_remaining"] == 0
     assert data_limit["usage_percent"] == 100.1
     assert data_limit["alert"] == "limit"
+    assert data_limit["calls_paused"] is False
+
+    grace_call = Call(
+        client_id=cid,
+        phone_number="+919876543212",
+        direction=CallDirection.INBOUND,
+        status=CallStatus.COMPLETED,
+        duration=5940,
+        started_at=datetime.now(timezone.utc) - timedelta(hours=12),
+    )
+    db.add(grace_call)
+    db.commit()
+    resp_paused = client.get("/api/v1/billing/me", headers=auth_headers(token))
+    data_paused = resp_paused.json()
+    assert data_paused["minutes_used"] == 1100
+    assert data_paused["calls_paused"] is True
+    assert data_paused["pause_at_percent"] == 110
 
     # Add minute pack of 500 minutes
     user_id = reg["user"]["id"]
@@ -167,8 +187,37 @@ def test_billing_me_success_and_alerts(client, db):
     resp_pack = client.get("/api/v1/billing/me", headers=auth_headers(token))
     data_pack = resp_pack.json()
     assert data_pack["minutes_limit"] == 1500
-    assert data_pack["minutes_remaining"] == 499
-    assert data_pack["alert"] == "none"  # 1001 / 1500 = 66.73%
+    assert data_pack["minutes_used"] == 1100
+    assert data_pack["calls_paused"] is False
+    assert data_pack["minutes_remaining"] == 400
+    assert data_pack["alert"] == "none"  # 1100 / 1500 = 73.3%
+
+
+def test_billing_pause_fields_are_scoped_to_the_signed_in_tenant(client, db):
+    first = register_ok(client, "billing-scope-a@test.com")
+    second = register_ok(client, "billing-scope-b@test.com")
+    second_id = second["user"]["client_id"]
+    make_call(
+        db, second_id, status=CallStatus.COMPLETED, duration=65940,
+        provider_call_id="billing-other-tenant",
+    )
+
+    first_response = client.get(
+        "/api/v1/billing/me",
+        headers=auth_headers(first["tokens"]["access_token"]),
+    )
+    second_response = client.get(
+        "/api/v1/billing/me",
+        headers=auth_headers(second["tokens"]["access_token"]),
+    )
+    assert first_response.status_code == second_response.status_code == 200
+    first_data = first_response.json()
+    second_data = second_response.json()
+    assert first_data["minutes_used"] == 0
+    assert first_data["calls_paused"] is False
+    assert second_data["minutes_used"] == 1099
+    assert second_data["calls_paused"] is False
+    assert first_data["pause_at_percent"] == second_data["pause_at_percent"] == 110
 
 
 # ---------------- 4. GET /business ----------------

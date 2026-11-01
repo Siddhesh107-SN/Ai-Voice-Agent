@@ -79,7 +79,7 @@ export default function PaymentView() {
       state: "ready",
       pkg,
       initialCycle: cycle,
-      userEmail: draft.email || "test@talkaor.com",
+      userEmail: draft.email,
     });
   }, [router]);
 

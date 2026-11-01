@@ -215,13 +215,15 @@ export async function fetchInitialDashboardData(): Promise<MockData> {
   const isSuperAdmin = role === 'super_admin';
   if (isSuperAdmin) assertSuperAdminAccess();
 
-  // Base endpoints for active client member / admin
-  const apptsPromise = http<any[]>('/api/v1/appointments?limit=100&order=desc');
+  // Super admins use platform data only; never request tenant-scoped endpoints.
+  const apptsPromise = isSuperAdmin
+    ? Promise.resolve([])
+    : http<any[]>('/api/v1/appointments?limit=100&order=desc');
   const agentsPromise = isSuperAdmin
     ? http<any[]>('/api/v1/admin/agents')
     : http<any[]>('/api/v1/agents');
-  const callsPromise = http<any[]>('/api/v1/calls');
-  const bizPromise = http<any>('/api/v1/business').catch(() => null);
+  const callsPromise = isSuperAdmin ? Promise.resolve([]) : http<any[]>('/api/v1/calls');
+  const bizPromise = isSuperAdmin ? Promise.resolve({}) : http<any>('/api/v1/business');
 
   // Super admin exclusive endpoints
   const businessesPromise = isSuperAdmin
@@ -538,38 +540,7 @@ export async function fetchAdminAgentLinks(): Promise<Agent[]> {
   }
 
   const rawAgents = await http<any[]>('/api/v1/admin/agents');
-  const agents = (rawAgents || []).map(adaptAgent);
-  const clientIds = [...new Set(agents.map((agent) => agent.business_id))];
-  const integrations = await Promise.all(clientIds.map(async (clientId) => [
-    clientId,
-    await fetchAdminIntegration(clientId),
-  ] as const));
-  const byAgentId = new Map<string, { provider: string; provider_agent_id: string | null; phone_number: string | null; status: string; tool_token_exists: boolean }>();
-  const tokenExistsByClient = new Map<string, boolean>();
-  for (const [clientId, integration] of integrations) {
-    tokenExistsByClient.set(clientId, integration.credential_exists);
-    for (const linked of integration.agents) {
-      byAgentId.set(linked.id, {
-        provider: linked.provider,
-        provider_agent_id: linked.provider_agent_id,
-        phone_number: linked.phone_number,
-        status: linked.status,
-        tool_token_exists: integration.credential_exists,
-      });
-    }
-  }
-  return agents.map((agent) => {
-    const details = byAgentId.get(agent.id);
-    return {
-      ...agent,
-      provider: details?.provider,
-      provider_agent_id: details?.provider_agent_id ?? null,
-      phone: details?.phone_number ?? agent.phone,
-      status: details?.status ?? agent.status,
-      online: details ? details.status === 'active' : agent.online,
-      tool_token_exists: details?.tool_token_exists ?? tokenExistsByClient.get(agent.business_id) ?? false,
-    };
-  });
+  return (rawAgents || []).map(adaptAgent);
 }
 
 export async function linkAdminAgent(clientId: string, input: AdminAgentInput): Promise<Agent> {
@@ -603,6 +574,13 @@ export async function linkAdminAgent(clientId: string, input: AdminAgentInput): 
     MOCK_CLIENT_INTEGRATIONS[clientId] ??= {
       signed_event_webhook_url: '/api/v1/webhooks/sarvam',
       tool_url_patterns: {},
+      header_tool_url_patterns: {},
+      call_completed_url_pattern: `/api/v1/webhooks/sarvam/{TOKEN}/${clientId}/call-completed`,
+      call_completed_header_url_pattern: `/api/v1/webhooks/sarvam/${clientId}/call-completed`,
+      call_completed_header: 'X-Webhook-Token',
+      call_start_url_pattern: `/api/v1/webhooks/sarvam/${clientId}/call-start`,
+      call_start_header: 'X-Tool-Token',
+      tool_token_header: 'X-Tool-Token',
       urls_are_absolute: false,
       credential_exists: false,
       credential_created_at: null,
@@ -679,25 +657,59 @@ export async function createClientToolToken(clientId: string): Promise<AdminClie
       tool_urls: Object.fromEntries(
         Object.entries(integration.tool_url_patterns).map(([action, url]) => [action, url.replace('{TOKEN}', token)]),
       ),
+      header_tool_urls: Object.fromEntries(
+        Object.entries(integration.header_tool_url_patterns).map(([action, url]) => [action, url]),
+      ),
+      call_completed_url: integration.call_completed_url_pattern.replace('{TOKEN}', token),
+      call_completed_header_url: integration.call_completed_header_url_pattern,
+      call_completed_header: integration.call_completed_header,
+      call_start_url: integration.call_start_url_pattern,
+      call_start_header: integration.call_start_header,
+      tool_token_header: integration.tool_token_header,
     };
   }
   return http<AdminClientToolToken>(`/api/v1/admin/clients/${encodeURIComponent(clientId)}/tool-token`, { method: 'POST' });
 }
 
-export async function fetchBillingMe(): Promise<BillingMe> {
+export type MockBillingState = 'normal' | 'warning' | 'limit' | 'paused';
+
+export async function fetchBillingMe(mockState: MockBillingState = 'normal'): Promise<BillingMe> {
   assertTenantAccess();
   if (isMockMode()) {
-    return {
-      plan: 'Growth',
-      billing_cycle: 'monthly',
-      minutes_limit: 300,
-      minutes_used: 186,
-      minutes_remaining: 114,
-      usage_percent: 62,
-      alert: 'none',
-      renews_on: '2026-11-24',
-      next_payment_amount: 3499,
+    const samples: Record<MockBillingState, BillingMe> = {
+      normal: {
+        plan: 'Growth',
+        billing_cycle: 'monthly',
+        minutes_limit: 300,
+        minutes_used: 186,
+        minutes_remaining: 114,
+        usage_percent: 62,
+        alert: 'none',
+        renews_on: '2026-11-24',
+        next_payment_amount: 3499,
+        calls_paused: false,
+        pause_at_percent: 110,
+      },
+      warning: {
+        plan: 'Growth', billing_cycle: 'monthly', minutes_limit: 300,
+        minutes_used: 240, minutes_remaining: 60, usage_percent: 80,
+        alert: 'warning', renews_on: '2026-11-24', next_payment_amount: 3499,
+        calls_paused: false, pause_at_percent: 110,
+      },
+      limit: {
+        plan: 'Growth', billing_cycle: 'monthly', minutes_limit: 300,
+        minutes_used: 300, minutes_remaining: 0, usage_percent: 100,
+        alert: 'limit', renews_on: '2026-11-24', next_payment_amount: 3499,
+        calls_paused: false, pause_at_percent: 110,
+      },
+      paused: {
+        plan: 'Growth', billing_cycle: 'monthly', minutes_limit: 300,
+        minutes_used: 330, minutes_remaining: 0, usage_percent: 110,
+        alert: 'limit', renews_on: '2026-11-24', next_payment_amount: 3499,
+        calls_paused: true, pause_at_percent: 110,
+      },
     };
+    return samples[mockState];
   }
   return http<BillingMe>('/api/v1/billing/me');
 }
@@ -819,25 +831,13 @@ export async function addMinutePack(
   });
 }
 
-export async function viewBusinessPin(id: string, actor?: string): Promise<{ pin: string; changedAt: string }> {
+export async function resetBusinessPin(id: string, pin: string, actor?: string): Promise<{ message: string }> {
   assertSuperAdminAccess();
   if (isMockMode()) {
     await loadMockData();
-    return { pin: '4321', changedAt: new Date().toISOString() };
+    return { message: 'PIN reset successfully' };
   }
-  return http<{ pin: string; changedAt: string }>(`/api/v1/admin/businesses/${id}/pin-view`, {
-    method: 'POST',
-    body: JSON.stringify({ actor }),
-  });
-}
-
-export async function resetBusinessPin(id: string, actor?: string, pin?: string): Promise<{ pin: string }> {
-  assertSuperAdminAccess();
-  if (isMockMode()) {
-    await loadMockData();
-    return { pin: pin ?? '' };
-  }
-  return http<{ pin: string }>(`/api/v1/admin/businesses/${id}/pin-reset`, {
+  return http<{ message: string }>(`/api/v1/admin/businesses/${id}/pin-reset`, {
     method: 'POST',
     body: JSON.stringify({ actor, pin }),
   });
