@@ -215,13 +215,15 @@ export async function fetchInitialDashboardData(): Promise<MockData> {
   const isSuperAdmin = role === 'super_admin';
   if (isSuperAdmin) assertSuperAdminAccess();
 
-  // Base endpoints for active client member / admin
-  const apptsPromise = http<any[]>('/api/v1/appointments?limit=100&order=desc');
+  // Super admins use platform data only; never request tenant-scoped endpoints.
+  const apptsPromise = isSuperAdmin
+    ? Promise.resolve([])
+    : http<any[]>('/api/v1/appointments?limit=100&order=desc');
   const agentsPromise = isSuperAdmin
     ? http<any[]>('/api/v1/admin/agents')
     : http<any[]>('/api/v1/agents');
-  const callsPromise = http<any[]>('/api/v1/calls');
-  const bizPromise = http<any>('/api/v1/business');
+  const callsPromise = isSuperAdmin ? Promise.resolve([]) : http<any[]>('/api/v1/calls');
+  const bizPromise = isSuperAdmin ? Promise.resolve({}) : http<any>('/api/v1/business');
 
   // Super admin exclusive endpoints
   const businessesPromise = isSuperAdmin

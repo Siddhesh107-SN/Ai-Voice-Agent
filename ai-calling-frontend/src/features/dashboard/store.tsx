@@ -221,7 +221,7 @@ export function DashboardProvider({
   }, [reload]);
 
   useEffect(() => {
-    if (simulate) return;
+    if (simulate || s.role === 'super_admin') return;
 
     const refreshAppointments = async () => {
       if (document.hidden || logoutStartedRef.current) return;
@@ -247,7 +247,7 @@ export function DashboardProvider({
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [simulate]);
+  }, [simulate, s.role]);
 
   const setTheme = useCallback((theme: Theme) => {
     try {
