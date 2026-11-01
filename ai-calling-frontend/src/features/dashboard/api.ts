@@ -829,25 +829,13 @@ export async function addMinutePack(
   });
 }
 
-export async function viewBusinessPin(id: string, actor?: string): Promise<{ pin: string; changedAt: string }> {
+export async function resetBusinessPin(id: string, pin: string, actor?: string): Promise<{ message: string }> {
   assertSuperAdminAccess();
   if (isMockMode()) {
     await loadMockData();
-    return { pin: '4321', changedAt: new Date().toISOString() };
+    return { message: 'PIN reset successfully' };
   }
-  return http<{ pin: string; changedAt: string }>(`/api/v1/admin/businesses/${id}/pin-view`, {
-    method: 'POST',
-    body: JSON.stringify({ actor }),
-  });
-}
-
-export async function resetBusinessPin(id: string, actor?: string, pin?: string): Promise<{ pin: string }> {
-  assertSuperAdminAccess();
-  if (isMockMode()) {
-    await loadMockData();
-    return { pin: pin ?? '' };
-  }
-  return http<{ pin: string }>(`/api/v1/admin/businesses/${id}/pin-reset`, {
+  return http<{ message: string }>(`/api/v1/admin/businesses/${id}/pin-reset`, {
     method: 'POST',
     body: JSON.stringify({ actor, pin }),
   });

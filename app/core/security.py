@@ -29,6 +29,7 @@ class TokenPayload:
     role: UserRole
     token_type: TokenType
     jti: str | None = None
+    auth_version: int = 0
 
 
 def hash_password(password: str) -> str:
@@ -48,7 +49,7 @@ def password_needs_rehash(password_hash: str) -> bool:
 
 def _create_token(user_id: int, client_id: int | None, role: UserRole,
                   token_type: TokenType, expires_delta: timedelta,
-                  jti: str | None = None) -> str:
+                  jti: str | None = None, auth_version: int = 0) -> str:
     settings = get_settings()
     now = datetime.now(timezone.utc)
     claims = {
@@ -59,21 +60,30 @@ def _create_token(user_id: int, client_id: int | None, role: UserRole,
         "iat": now,
         "exp": now + expires_delta,
         "jti": jti or uuid.uuid4().hex,
+        "auth_version": auth_version,
     }
     return jwt.encode(claims, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
 def create_access_token(user_id: int, client_id: int | None, role: UserRole,
-                        expires_delta: timedelta | None = None) -> str:
+                        expires_delta: timedelta | None = None,
+                        auth_version: int = 0) -> str:
     delta = expires_delta or timedelta(minutes=get_settings().access_token_expire_minutes)
-    return _create_token(user_id, client_id, role, TokenType.ACCESS, delta)
+    return _create_token(
+        user_id, client_id, role, TokenType.ACCESS, delta,
+        auth_version=auth_version,
+    )
 
 
 def create_refresh_token(user_id: int, client_id: int | None, role: UserRole,
                          expires_delta: timedelta | None = None,
-                         jti: str | None = None) -> str:
+                         jti: str | None = None,
+                         auth_version: int = 0) -> str:
     delta = expires_delta or timedelta(days=get_settings().refresh_token_expire_days)
-    return _create_token(user_id, client_id, role, TokenType.REFRESH, delta, jti=jti)
+    return _create_token(
+        user_id, client_id, role, TokenType.REFRESH, delta,
+        jti=jti, auth_version=auth_version,
+    )
 
 
 def create_elevation_token(user_id: int, client_id: int,
@@ -113,6 +123,7 @@ def decode_token(token: str, expected_type: TokenType) -> TokenPayload:
             role=UserRole(claims["role"]),
             token_type=expected_type,
             jti=claims.get("jti"),
+            auth_version=int(claims.get("auth_version", 0)),
         )
     except (KeyError, ValueError, TypeError) as exc:
         raise InvalidTokenError() from exc

@@ -49,6 +49,20 @@ class ForbiddenError(AppError):
     status_code, error_code, message = 403, "FORBIDDEN", "You do not have permission to do this"
 
 
+class ServiceUnavailableError(AppError):
+    status_code, error_code, message = (
+        503,
+        "SERVICE_UNAVAILABLE",
+        "A required service is temporarily unavailable",
+    )
+
+    def __init__(self, message: str | None = None, *, error_code: str | None = None) -> None:
+        detail = message or self.message
+        code = error_code or self.error_code
+        self.custom_body = {"detail": detail, "code": code}
+        super().__init__(detail, error_code=code)
+
+
 class AccessNotApprovedError(AppError):
     """Rejected when client's access_status is not active."""
 

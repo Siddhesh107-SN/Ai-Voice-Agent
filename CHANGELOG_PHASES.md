@@ -658,3 +658,31 @@ The complete `PUBLIC_ROUTES` set now contains:
 - Reworked `README.md` for architecture, local setup, CI coverage, and docs.
 - No application code, tests, migrations, workflows, or dependencies were
   changed. No tests, database, Docker, npm install, or frontend build were run.
+
+### Security follow-up
+
+- Added migration `0012` for hashed one-time password-reset codes and an
+  `auth_version` counter. Reset codes expire, are attempt-limited and
+  single-use; successful resets revoke refresh tokens and invalidate existing
+  access tokens. The forgot-password response does not reveal account
+  eligibility, and email delivery runs after the response.
+- Replaced the PIN reveal endpoint and PIN-bearing responses with a reset-only
+  interface. Added per-IP rate limits to the root OTP routes, path-token
+  Sarvam tools, and the shared-token outbound callback.
+- Removed request targets from Gunicorn access logs, suppresses verification
+  codes from console logs, and rejects `DEBUG=true` in production.
+- Added a server-verified dashboard session cookie, with the signing secret
+  documented in the frontend environment example. Existing browser tokens
+  remain in localStorage as requested.
+- Added the frontend password-reset flow and backend tests for public
+  responses, cross-user isolation, one-time code use, password changes, and
+  session invalidation.
+- No PostgreSQL-dependent tests, migrations, Docker commands, dependency
+  installs, or frontend builds were run in this follow-up.
+- The production warning and legacy-token flag now also cover the shared-token
+  Sarvam `/outbound` callback. Gunicorn access logs omit request paths; direct
+  Uvicorn deployments must use `--no-access-log`, and Nginx must be configured
+  to omit token-bearing request targets.
+- Super-admin initial loads now fetch platform-only data and skip tenant
+  appointment polling. Updated the runbook with secret-rotation guidance and
+  clarified the changed `SARVAM_LEGACY_SHARED_TOKEN_ENABLED` behavior.

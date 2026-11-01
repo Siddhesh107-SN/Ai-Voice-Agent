@@ -1,5 +1,4 @@
 import os
-import secrets
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -31,8 +30,7 @@ from app.schemas.admin import (AccessActionResponse, AccessRequestItem,
                                AdminAppointmentItem, AdminHealthDetails,
                                AdminMonitoringItem, AdminToolCallItem,
                                AdminWebhookEventDetail, AdminWebhookEventItem,
-                               AdminMessageItem, LogItem, PinResetResponse,
-                               PinViewResponse)
+                               AdminMessageItem, LogItem, PinResetResponse)
 from app.core.security import hash_password
 from app.schemas.user import UserOut, UserUpdate
 from app.services.audit_service import record_audit
@@ -676,42 +674,12 @@ class AdminService:
 
         return {"success": True, "minutes_added": minutes, "client_id": client.id}
 
-    def view_pin(self, client_id: int, user: User, ip: str | None) -> PinViewResponse:
+    def reset_pin(self, client_id: int, pin: str, user: User, ip: str | None) -> PinResetResponse:
         client = self.db.get(Client, client_id)
         if client is None:
             raise NotFoundError(f"Client {client_id} not found")
 
-        staff_pin = self.db.scalar(select(StaffPin).where(StaffPin.client_id == client.id))
-        if staff_pin is None:
-            raise BadRequestError("No staff PIN configured for this business", error_code="PIN_NOT_SET")
-
-        pin_service = PinService(self.db)
-        decrypted_pin = pin_service.decrypt_pin(staff_pin.pin_encrypted)
-
-        record_audit(
-            self.db,
-            action="admin.pin.view",
-            user_id=user.id,
-            client_id=client.id,
-            entity_type="client",
-            entity_id=client.id,
-            ip_address=ip,
-            level="warn",
-            message=f"Super Admin viewed the staff PIN for {client.business_name}",
-        )
-        self.db.commit()
-
-        return PinViewResponse(
-            pin=decrypted_pin,
-            changedAt=staff_pin.changed_at.isoformat() if staff_pin.changed_at else None,
-        )
-
-    def reset_pin(self, client_id: int, pin: str | None, user: User, ip: str | None) -> PinResetResponse:
-        client = self.db.get(Client, client_id)
-        if client is None:
-            raise NotFoundError(f"Client {client_id} not found")
-
-        new_pin = pin.strip() if pin else f"{secrets.randbelow(10000):04d}"
+        new_pin = pin.strip()
 
         pin_service = PinService(self.db)
         encrypted = pin_service.encrypt_pin(new_pin)
@@ -747,7 +715,7 @@ class AdminService:
         )
         self.db.commit()
 
-        return PinResetResponse(pin=new_pin, message="PIN reset successfully")
+        return PinResetResponse(message="PIN reset successfully")
 
     # ---------------- 3. AGENTS ----------------
 
@@ -1041,6 +1009,7 @@ class AdminService:
             )
 
         target_user.password_hash = hash_password(new_password)
+        target_user.auth_version += 1
         record_audit(
             self.db,
             action="admin.user.reset_password",

@@ -20,6 +20,7 @@ class EmailVerificationService:
         self.email_service = EmailService()
 
     def send_verification_code(self, user: User) -> dict[str, str]:
+        self.email_service.ensure_verification_delivery_configured()
         now = datetime.now(timezone.utc)
 
         # 1. 60-second resend cooldown check

@@ -16,8 +16,7 @@ from app.schemas.admin import (AccessActionResponse, AccessDeclineRequest,
                                AdminMessageUpdateRequest, AdminUserResetPasswordRequest,
                                AgentPowerRequest, BusinessMinutePackRequest,
                                BusinessStatusUpdateRequest, LogItem,
-                               PinResetRequest, PinResetResponse,
-                               PinViewResponse)
+                               PinResetRequest, PinResetResponse)
 from app.schemas.agent import AgentOut
 from app.schemas.agent_link import (AdminAgentCreate, AdminAgentUpdate,
                                     ClientIntegrationOut, ClientToolTokenOut)
@@ -81,18 +80,11 @@ def add_minute_pack(
     return AdminService(db).add_minute_pack(client_id=client_id, minutes=body.minutes, user=user, ip=_ip(request))
 
 
-@router.post("/businesses/{client_id}/pin-view", response_model=PinViewResponse)
-@limiter.limit("10/minute")
-def view_business_pin(client_id: int, request: Request, user: SuperAdminUser, db: DbSession):
-    """Decrypt and view current staff PIN (audit-logged, rate-limited to 10/min)."""
-    return AdminService(db).view_pin(client_id=client_id, user=user, ip=_ip(request))
-
-
 @router.post("/businesses/{client_id}/pin-reset", response_model=PinResetResponse)
 def reset_business_pin(
     client_id: int, body: PinResetRequest, request: Request, user: SuperAdminUser, db: DbSession
 ):
-    """Reset staff PIN to provided or generated 4 digits and clear lockout attempts."""
+    """Set a new staff PIN without returning it, and clear lockout attempts."""
     return AdminService(db).reset_pin(client_id=client_id, pin=body.pin, user=user, ip=_ip(request))
 
 

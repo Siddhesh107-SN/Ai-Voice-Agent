@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, String, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -28,6 +28,9 @@ class User(TimestampMixin, Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(str_enum(UserRole, "user_role"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    auth_version: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0"), nullable=False
+    )
     is_protected: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=False
     )

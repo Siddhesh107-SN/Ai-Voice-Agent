@@ -80,7 +80,10 @@ export function getUserRole(): AppRole | null {
   return role === 'admin' || role === 'staff' || role === 'super_admin' ? role : null;
 }
 
-export function setSessionCookies(user: { id?: string | number; role: string; access_status?: string | null }): void {
+export async function setSessionCookies(
+  user: { id?: string | number; role: string; access_status?: string | null },
+  accessToken: string,
+): Promise<void> {
   if (typeof document === 'undefined') return;
   const role = mapRole(user.role);
   let userHint = user.id ? String(user.id) : 'active_user';
@@ -93,6 +96,16 @@ export function setSessionCookies(user: { id?: string | number; role: string; ac
   document.cookie = `tk_role=${role}; path=/; SameSite=Lax; max-age=604800`;
   document.cookie = `tk_session_user=${userHint}; path=/; SameSite=Lax; max-age=604800`;
 
+  const response = await fetch('/api/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ access_token: accessToken }),
+  });
+  if (!response.ok) {
+    await clearAuth();
+    throw new ApiError('Unable to verify the dashboard session.', response.status, 'SESSION_VERIFICATION_FAILED');
+  }
+
   if (typeof window !== 'undefined') {
     try {
       localStorage.removeItem(STORAGE_KEYS.USER_DATA);
@@ -100,7 +113,7 @@ export function setSessionCookies(user: { id?: string | number; role: string; ac
   }
 }
 
-export function clearAuth(): void {
+export async function clearAuth(): Promise<void> {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
     localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
@@ -110,6 +123,14 @@ export function clearAuth(): void {
   if (typeof document !== 'undefined') {
     document.cookie = 'tk_role=; path=/; max-age=0; SameSite=Lax';
     document.cookie = 'tk_session_user=; path=/; max-age=0; SameSite=Lax';
+    try {
+      const response = await fetch('/api/session', { method: 'DELETE' });
+      if (!response.ok) {
+        console.error('Unable to clear the server session cookie.');
+      }
+    } catch {
+      console.error('Unable to clear the server session cookie.');
+    }
   }
 }
 
@@ -195,7 +216,7 @@ export async function http<T = any>(endpoint: string, options: RequestOptions = 
           });
 
           if (!refreshRes.ok) {
-            clearAuth();
+            await clearAuth();
             if (typeof window !== 'undefined') {
               window.location.href = '/login?expired=1';
             }
@@ -217,6 +238,18 @@ export async function http<T = any>(endpoint: string, options: RequestOptions = 
 
           if (newAccessToken) {
             setTokens(newAccessToken, newRefreshToken);
+            const sessionRes = await fetch('/api/session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ access_token: newAccessToken }),
+            });
+            if (!sessionRes.ok) {
+              throw new ApiError(
+                'Unable to verify the dashboard session.',
+                sessionRes.status,
+                'SESSION_VERIFICATION_FAILED',
+              );
+            }
           }
           isRefreshing = false;
           onRefreshed(newAccessToken);
@@ -226,7 +259,7 @@ export async function http<T = any>(endpoint: string, options: RequestOptions = 
         } catch (err) {
           isRefreshing = false;
           onRefreshFailed(err);
-          clearAuth();
+          await clearAuth();
           if (typeof window !== 'undefined') {
             window.location.href = '/login?expired=1';
           }
@@ -247,7 +280,7 @@ export async function http<T = any>(endpoint: string, options: RequestOptions = 
         });
       }
     } else {
-      clearAuth();
+      await clearAuth();
       if (typeof window !== 'undefined') {
         window.location.href = '/login?expired=1';
       }
@@ -315,7 +348,7 @@ export async function logoutUser(broadcast = true): Promise<void> {
       } catch {}
     }
 
-    clearAuth();
+    await clearAuth();
     if (typeof window !== 'undefined') {
       window.location.href = '/login';
     }

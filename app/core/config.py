@@ -53,7 +53,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_production_secrets(self) -> "Settings":
-        if self.app_env == "production":
+        if self.app_env.strip().lower() == "production":
+            if self.debug:
+                raise ValueError("DEBUG must be false in production")
             if self.jwt_secret_key.startswith("change-me") or len(self.jwt_secret_key) < 32:
                 raise ValueError("JWT_SECRET_KEY must be a strong secret (32+ chars) in production")
             if not self.pin_encryption_key:

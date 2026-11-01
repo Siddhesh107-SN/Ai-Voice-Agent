@@ -58,9 +58,9 @@ MAIL_FROM=Talkaor <no-reply@<verified-domain>>
 REQUIRE_EMAIL_VERIFICATION=true
 ```
 
-`APP_ENV=production` validates that `JWT_SECRET_KEY` is at least 32 characters
-and does not use the development `change-me` prefix, and that
-`PIN_ENCRYPTION_KEY` is non-empty. The PIN key must also be a valid Fernet key
+`APP_ENV=production` requires `DEBUG=false`, validates that `JWT_SECRET_KEY`
+is at least 32 characters and does not use the development `change-me` prefix,
+and requires `PIN_ENCRYPTION_KEY`. The PIN key must also be a valid Fernet key
 when PIN encryption is used. Keep all key values in the server's secret
 manager/environment, not in this file or deployment logs. Configure
 `SARVAM_API_KEY`, `SARVAM_BASE_URL`, and `SARVAM_WEBHOOK_SECRET` only as needed
@@ -78,13 +78,68 @@ NEXT_PUBLIC_API_MODE=live
 NEXT_PUBLIC_API_URL=https://<api-domain>
 NEXT_PUBLIC_ONBOARDING_STATUS_URL=/api/v1/onboarding/status
 BACKEND_INTERNAL_URL=http://127.0.0.1:8000
+SESSION_COOKIE_SECRET=<random-secret-at-least-32-bytes>
 ```
 
 For a Compose network, set `BACKEND_INTERNAL_URL` to the backend service name
 and port instead (for example `http://<backend-service>:8000`). Never deploy
 with mock mode enabled.
 
-## Migration preflight: revisions 0010 and 0011
+`SESSION_COOKIE_SECRET` must be a high-entropy secret of at least 32 bytes.
+Keep it stable across frontend restarts and instances so existing sessions
+remain valid.
+
+`SARVAM_LEGACY_SHARED_TOKEN_ENABLED` defaults to `true` for compatibility and
+produces a production startup warning while enabled. It gates the shared-token
+fallback for legacy tool paths and the `/outbound` callback. Set it to `false`
+only after each client has been moved to per-client credentials and the
+outbound callback no longer needs the shared token.
+
+### Access-log handling
+
+The production Gunicorn configuration logs client address, HTTP method,
+status, and latency, but deliberately omits the request target. If a service
+runs Uvicorn directly, start it with `--no-access-log`; Uvicorn's default
+access log includes the request path. The server owner must also configure
+Nginx not to log token-bearing Sarvam paths: disable access logging for those
+locations or use a custom format that omits `$request`, `$request_uri`, and
+`$uri`. Check proxy and error-log formats as well; do not assume application
+logging settings control Nginx.
+
+## Rotate secrets
+
+If this repository was public or shared outside the trusted operations team,
+rotate any credential that was ever committed or exposed through logs, even
+if the corresponding file is no longer present. The historical `.env` and
+`.env.local` entries were frontend configuration names, and
+`.vscode/settings.json` contained an editor setting; the historical
+`ai-calling-frontend/backend/talkaor.db` contained populated user, customer,
+appointment, call, and audit tables. Treat the database contents as exposed
+user data and follow the organization's incident-response and notification
+policy.
+
+Review and rotate, as applicable:
+
+- `DATABASE_URL` credentials; update the database role password and the
+  protected server environment.
+- `JWT_SECRET_KEY`; this invalidates signed access, refresh, and elevation
+  tokens, so require users to sign in again.
+- `SESSION_COOKIE_SECRET`; this invalidates signed dashboard session cookies.
+- `PIN_ENCRYPTION_KEY`; coordinate a secure re-encryption of stored PINs or
+  reset them before replacing the key, since old encrypted PINs cannot be
+  decrypted with a new key.
+- `SUPERADMIN_1_PASSWORD` and `SUPERADMIN_2_PASSWORD`; update through the
+  approved account-management process.
+- `RESEND_API_KEY`, SMTP credentials (`SMTP_USER`/`SMTP_PASSWORD`), and any
+  `SARVAM_API_KEY` or `SARVAM_WEBHOOK_SECRET` that may have been exposed.
+- Per-client Sarvam tool tokens; revoke and reissue them in the integration
+  screen, then update the matching provider configuration.
+
+Do not put replacement values in Git, deployment output, tickets, or shell
+history. Use the approved secret manager and verify service health after each
+rotation.
+
+## Migration preflight: revisions 0010, 0011, and 0012
 
 Revision `0010` unconditionally adds `webhook_events.request_id`. If that
 column already exists, the migration fails. It conditionally skips its three
@@ -97,6 +152,12 @@ guards. Existing objects with those names can make it fail. It normalizes
 formatting and identifies duplicate phone numbers by digits; later duplicate
 agents are set to `NULL` by the migration. Resolve duplicates deliberately
 before deployment to avoid losing an agent's configured number.
+
+Revision `0012` adds `users.auth_version` with a zero default and creates
+`password_reset_codes` plus two indexes. It does not rewrite existing user
+rows beyond the defaulted version column. The table, column, and indexes are
+created without existence guards; if any already exist, stop and inspect the
+schema rather than applying the migration blindly.
 
 Run these checks using a read-only production database session before
 `alembic upgrade head`:
@@ -141,6 +202,17 @@ WHERE schemaname = current_schema()
       'ix_webhook_events_client_created_at',
       'ix_audit_logs_action_created_at'
   );
+
+-- 0012 objects must not already exist before applying the migration.
+SELECT column_name
+FROM information_schema.columns
+WHERE table_schema = current_schema()
+  AND table_name = 'users'
+  AND column_name = 'auth_version';
+
+SELECT to_regclass('public.password_reset_codes') AS reset_code_table,
+       to_regclass('public.ix_password_reset_codes_user_id') AS reset_user_index,
+       to_regclass('public.ix_password_reset_codes_user_created') AS reset_user_created_index;
 ```
 
 If a check returns unexpected results, stop and prepare a reviewed database
@@ -249,11 +321,12 @@ instructions and placeholders.
    required by the process manager.
 
 That flag disables the shared-token fallback for legacy path-token tool
-routes. It does **not** disable the old signed
-`/api/v1/webhooks/sarvam` endpoint or the shared-token outbound callback
-`/api/v1/webhooks/sarvam/{token}/outbound`. If those legacy paths are no longer
-used, block them at the reverse proxy/firewall or remove them in a separately
-reviewed code release. Redact token-bearing request paths from access logs.
+routes and the shared-token outbound callback
+`/api/v1/webhooks/sarvam/{token}/outbound`. It does **not** disable the old
+signed `/api/v1/webhooks/sarvam` endpoint. If that signed endpoint is no
+longer used, block it at the reverse proxy/firewall or remove it in a
+separately reviewed code release. Redact token-bearing request paths from
+proxy access and error logs.
 
 ## Post-deploy checks
 
@@ -273,6 +346,8 @@ reviewed code release. Redact token-bearing request paths from access logs.
    use. Do not copy raw tokens or sensitive payloads into deployment output.
 5. Sign in as a tenant admin and confirm the tenant dashboard loads. Verify
    one normal appointment, call-list, and billing view where the data exists.
+6. With a dedicated test account and working email delivery, verify the
+   password-reset code flow and confirm that the previous session is rejected.
 
 ## Rollback
 
@@ -286,16 +361,23 @@ rebuild/restart backend and frontend using the same process manager. First
 confirm the old application is compatible with the upgraded schema; do not
 assume a code rollback also rolls back the database.
 
-If a reviewed database rollback is required and the current head is `0011`,
-the migration targets are:
+If a reviewed database rollback is required and the current head is `0012`,
+roll back to a specific reviewed revision, one step at a time:
 
 ```bash
+alembic downgrade 0011
 alembic downgrade 0010
 alembic downgrade 0009
 ```
 
-The first command downgrades `0011`; the second downgrades `0010`. Revision
-`0011` drops the client tool credential table and its tokens, removes the
+The first command downgrades `0012`; the second downgrades `0011`; the third
+downgrades `0010`. Revision `0012` permanently deletes reset-code records and
+drops `users.auth_version`. Downgrading that counter can make still-unexpired
+access tokens from before a password reset usable again under the old code.
+Roll back the application first, revoke affected sessions if needed, and
+confirm the impact with the security owner before downgrading.
+
+Revision `0011` drops the client tool credential table and its tokens, removes the
 unique phone index, restores original agent phone strings from its backup
 table, and then drops that backup table. Credential records are not restored;
 re-upgrading requires token re-provisioning. Do not downgrade if the backup
@@ -311,10 +393,12 @@ backup and obtain database-owner approval before any downgrade.
 | Symptom | Checks and response |
 |---|---|
 | `/api/v1/health` fails | Check backend service state, reverse-proxy upstream, port, and backend logs. Do not paste environment values into logs or tickets. |
-| Migration fails on `request_id` or an existing object | Stop deployment; compare the production schema with the preflight SQL and review the migration state before making changes. |
+| Migration fails on an existing column, table, or index | Stop deployment; compare the production schema with the preflight SQL and review the migration state before making changes. |
 | Migration reports agent phone uniqueness | Review the digits-only duplicate query, resolve ownership/number assignment with the client, back up the table, then retry under the approved migration procedure. |
 | Frontend returns 502 or API requests fail | Confirm the frontend rewrite's `BACKEND_INTERNAL_URL`, backend health, reverse-proxy routing, and that frontend/backend processes use the intended environment. |
-| Verification email cannot arrive | Confirm `EMAIL_BACKEND` is a real delivery backend and its credentials/sender are configured. `console` does not send email; a missing Resend key causes sending to fail. |
+| Verification email cannot arrive | Confirm `EMAIL_BACKEND` is a real delivery backend and its credentials/sender are configured. `console` does not send email; production requests return 503 when delivery is not configured. |
+| Password-reset request returns 503 | Confirm SMTP or Resend is selected and its required settings are present; console delivery is not accepted for password resets. |
+| Dashboard redirects to login after successful authentication | Confirm `SESSION_COOKIE_SECRET` is set to the same stable secret for every frontend instance and that `BACKEND_INTERNAL_URL` can reach the backend `/api/v1/auth/me` endpoint. |
 | Sarvam webhook is missing | Check the configured URL and authentication header in Sarvam, the public API origin, and **Webhook events**. Provider delivery and retry behavior must be confirmed in Sarvam. |
 | Tool call is unauthorized | Rotate or verify the client tool token and compare the configured header name and URL with that client's Integration screen. Avoid tokens in URL paths. |
 | Call is blocked or not billed | Check Monitoring's client status and usage, then inspect the call-start response, call-completed event, recognized phone number, and duration. The provider's response handling must be verified in Sarvam. |

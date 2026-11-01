@@ -78,3 +78,19 @@ class ForgotPasswordRequest(BaseModel):
     @classmethod
     def _email(cls, v: str) -> str:
         return v.lower()
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(pattern=r"^\d{6}$")
+    new_password: str
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return v.lower()
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate_new_password(cls, v: str) -> str:
+        return validate_password_strength(v)

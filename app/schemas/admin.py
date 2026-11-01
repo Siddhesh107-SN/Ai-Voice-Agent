@@ -48,17 +48,11 @@ class BusinessMinutePackRequest(BaseModel):
     minutes: int = Field(..., ge=1, le=10000)
 
 
-class PinViewResponse(BaseModel):
-    pin: str
-    changedAt: str | None = None
-
-
 class PinResetRequest(BaseModel):
-    pin: str | None = Field(None, pattern="^[0-9]{4}$")
+    pin: str = Field(..., pattern="^[0-9]{4}$")
 
 
 class PinResetResponse(BaseModel):
-    pin: str
     message: str = "PIN reset successfully"
 
 

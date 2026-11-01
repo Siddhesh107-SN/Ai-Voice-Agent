@@ -14,7 +14,6 @@ import {
   fetchAdminIntegration,
   updateBusinessStatus,
   addMinutePack,
-  viewBusinessPin,
   linkAdminAgent,
   unlinkAdminAgent,
   updateAdminAgent,
@@ -126,35 +125,6 @@ export function AccessControl() {
   );
 }
 
-function PinReveal({ id }: { id: string }) {
-  const { s, closeModal, actor, toast } = useDash();
-  const b = s.businesses.find((x) => x.id === id)!;
-  const [pinVal, setPinVal] = useState('••••');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    viewBusinessPin(id, actor)
-      .then((res) => {
-        setPinVal(res.pin);
-        setLoading(false);
-      })
-      .catch(() => {
-        setPinVal('••••');
-        setLoading(false);
-        toast('Unable to load staff PIN');
-      });
-  }, [id, actor, toast]);
-
-  return (
-    <Dialog title={`Staff PIN: ${b.name}`} actions={<button onClick={closeModal}>Close</button>}>
-      <p className="mono" style={{ fontSize: 32, letterSpacing: 10, margin: '6px 0' }}>
-        {loading ? '...' : pinVal}
-      </p>
-      <p className="mut" style={{ margin: 0 }}>This view was logged to the platform audit trail.</p>
-    </Dialog>
-  );
-}
-
 function PinChange({ id }: { id: string }) {
   const { s, closeModal, toast, actor, reload } = useDash();
   const b = s.businesses.find((x) => x.id === id)!;
@@ -168,7 +138,7 @@ function PinChange({ id }: { id: string }) {
     }
     setBusy(true);
     try {
-      await resetBusinessPin(id, actor, v);
+      await resetBusinessPin(id, v, actor);
       await reload();
       closeModal();
       toast('PIN changed and logged to audit trail');
@@ -201,12 +171,12 @@ export function BusinessesPlans() {
 
   return (
     <>
-      <PageHead title="Businesses and plans" sub="Limits, packs, subscriptions and staff PINs." />
+      <PageHead title="Businesses and plans" sub="Limits, packs, subscriptions and staff PIN reset." />
       <div className="card" style={{ overflow: 'auto' }}>
         <table><thead><tr><th>Business</th><th>Plan and limit</th><th>Renews</th><th>Revenue</th><th>Staff PIN</th><th /></tr></thead>
           <tbody>{s.businesses.map((b) => (
             <tr key={b.id}><td><b>{b.name}</b></td><td>{b.plan}<br /><span className="mono mut">{b.minutes_used}/{b.minutes_limit} min</span></td><td className="mono">{b.renews_on}</td><td className="mono">{inr(PLAN_PRICE[b.plan])}</td>
-              <td className="mono">••••<br /><button onClick={() => openModal(<PinReveal id={b.id} />)}>View</button> <button onClick={() => openModal(<PinChange id={b.id} />)}>Change</button></td>
+              <td className="mono">••••<br /><button onClick={() => openModal(<PinChange id={b.id} />)}>Reset</button></td>
               <td><button onClick={() => addPack(b.id, b.name)}>Add 100 min</button></td></tr>
           ))}</tbody></table>
       </div>

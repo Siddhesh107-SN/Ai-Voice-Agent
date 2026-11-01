@@ -63,6 +63,14 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     def on_startup() -> None:
         warn_if_console_backend_in_production()
+        if (
+            settings.app_env.strip().lower() == "production"
+            and settings.sarvam_legacy_shared_token_enabled
+        ):
+            logging.getLogger(__name__).warning(
+                "SARVAM_LEGACY_SHARED_TOKEN_ENABLED is true in production; "
+                "disable it after all clients complete the per-client token cutover."
+            )
         from app.scripts.seed_super_admins import startup_seed_super_admins
         startup_seed_super_admins()
 

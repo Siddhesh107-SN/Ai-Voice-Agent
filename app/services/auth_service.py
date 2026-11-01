@@ -40,8 +40,13 @@ def issue_tokens(user: User, db: Session, ip: str | None = None,
     )
     db.add(token_record)
     return TokenPair(
-        access_token=create_access_token(user.id, user.client_id, user.role),
-        refresh_token=create_refresh_token(user.id, user.client_id, user.role, expires_delta=delta, jti=jti),
+        access_token=create_access_token(
+            user.id, user.client_id, user.role, auth_version=user.auth_version
+        ),
+        refresh_token=create_refresh_token(
+            user.id, user.client_id, user.role, expires_delta=delta, jti=jti,
+            auth_version=user.auth_version,
+        ),
         expires_in=settings.access_token_expire_minutes * 60,
     )
 
@@ -124,7 +129,12 @@ class AuthService:
             raise TokenExpiredError()
 
         user = self.users.get_by_id(payload.user_id)
-        if user is None or user.client_id != payload.client_id or user.role != payload.role:
+        if (
+            user is None
+            or user.client_id != payload.client_id
+            or user.role != payload.role
+            or user.auth_version != payload.auth_version
+        ):
             raise InvalidTokenError()
         _ensure_can_authenticate(user)
 
@@ -149,8 +159,13 @@ class AuthService:
         self.db.commit()
 
         return TokenPair(
-            access_token=create_access_token(user.id, user.client_id, user.role),
-            refresh_token=create_refresh_token(user.id, user.client_id, user.role, expires_delta=delta, jti=new_jti),
+            access_token=create_access_token(
+                user.id, user.client_id, user.role, auth_version=user.auth_version
+            ),
+            refresh_token=create_refresh_token(
+                user.id, user.client_id, user.role, expires_delta=delta, jti=new_jti,
+                auth_version=user.auth_version,
+            ),
             expires_in=settings.access_token_expire_minutes * 60,
         )
 
@@ -192,6 +207,7 @@ class AuthService:
             raise BadRequestError("Current password is incorrect", error_code="INVALID_CURRENT_PASSWORD")
 
         user.password_hash = hash_password(new_password)
+        user.auth_version += 1
         record_audit(
             self.db,
             "auth.change_password",
@@ -202,24 +218,6 @@ class AuthService:
             message=f"Password changed for user {user.email}",
         )
         self.db.commit()
-
-    def forgot_password(self, email: str, ip: str | None = None) -> dict[str, str]:
-        """Request password reset. Protected accounts are rejected with 403."""
-        user = self.users.get_by_email(email.lower())
-        if user is not None and getattr(user, "is_protected", False):
-            assert_user_not_protected(user, "forgot_password", actor=None, db=self.db, ip=ip)
-
-        if user is not None:
-            record_audit(
-                self.db,
-                "auth.forgot_password_requested",
-                user_id=user.id,
-                client_id=user.client_id,
-                ip_address=ip,
-                level="info",
-            )
-            self.db.commit()
-        return {"message": "If this email is registered, instructions to reset your password have been sent."}
 
     def reset_password_by_admin(
         self, target_user_id: int, new_password: str, actor: User, ip: str | None = None
@@ -240,6 +238,7 @@ class AuthService:
             )
 
         target_user.password_hash = hash_password(new_password)
+        target_user.auth_version += 1
         record_audit(
             self.db,
             "auth.admin_reset_password",

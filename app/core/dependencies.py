@@ -33,8 +33,13 @@ def get_current_user(
         raise UnauthorizedError()
     payload = decode_token(credentials.credentials, TokenType.ACCESS)
     user = UserRepository(db).get_by_id(payload.user_id)
-    # Token claims must still match the DB (tenant or role changed => token is stale).
-    if user is None or user.client_id != payload.client_id or user.role != payload.role:
+    # Token claims must still match the DB (tenant, role, or password changed => stale token).
+    if (
+        user is None
+        or user.client_id != payload.client_id
+        or user.role != payload.role
+        or user.auth_version != payload.auth_version
+    ):
         raise InvalidTokenError()
     if not user.is_active:
         raise ForbiddenError("This user account is disabled", error_code="USER_INACTIVE")

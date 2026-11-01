@@ -41,8 +41,13 @@ T = TypeVar("T")
 
 
 def verify_sarvam_token(request: Request, token: str = Path(...)) -> None:
-    secret = get_settings().sarvam_webhook_secret
-    if not secret or not secrets.compare_digest(token.encode(), secret.encode()):
+    settings = get_settings()
+    secret = settings.sarvam_webhook_secret
+    if (
+        not settings.sarvam_legacy_shared_token_enabled
+        or not secret
+        or not secrets.compare_digest(token.encode(), secret.encode())
+    ):
         log_invalid_tool_token(
             "invalid_or_unconfigured_token",
             request_id=safe_request_id(request, token),
@@ -266,7 +271,8 @@ def _process_outbound(payload: SarvamOutboundPayload) -> None:
 
 
 @router.post("/sarvam/{token}/outbound", dependencies=[Depends(verify_sarvam_token)])
-def outbound(token: str, payload: SarvamOutboundPayload, background_tasks: BackgroundTasks):
+@limiter.limit("30/minute")
+def outbound(request: Request, token: str, payload: SarvamOutboundPayload, background_tasks: BackgroundTasks):
     background_tasks.add_task(_process_outbound, payload)
     return {"ok": True}
 
@@ -319,6 +325,7 @@ def _require_date_time(body: SarvamAppointmentRequest) -> tuple:
 
 @router.post("/sarvam/{token}/{client_id}/appointments/check-slot",
              response_model=ApiResponse[dict], dependencies=[Depends(verify_client_sarvam_token)])
+@limiter.limit("60/minute")
 def check_slot(request: Request, token: str, client_id: int,
                body: SarvamAppointmentRequest, db: DbSession):
     def operation():
@@ -336,6 +343,7 @@ def check_slot(request: Request, token: str, client_id: int,
 @router.post("/sarvam/{token}/{client_id}/appointments/book",
              response_model=ApiResponse[AppointmentOut],
              dependencies=[Depends(verify_client_sarvam_token)])
+@limiter.limit("60/minute")
 def book(request: Request, token: str, client_id: int,
          body: SarvamAppointmentRequest, db: DbSession):
     def operation():
@@ -353,6 +361,7 @@ def book(request: Request, token: str, client_id: int,
 @router.post("/sarvam/{token}/{client_id}/appointments/reschedule",
              response_model=ApiResponse[AppointmentOut],
              dependencies=[Depends(verify_client_sarvam_token)])
+@limiter.limit("60/minute")
 def reschedule(request: Request, token: str, client_id: int,
                body: SarvamAppointmentRequest, db: DbSession):
     def operation():
@@ -374,6 +383,7 @@ def reschedule(request: Request, token: str, client_id: int,
 @router.post("/sarvam/{token}/{client_id}/appointments/cancel",
              response_model=ApiResponse[AppointmentOut],
              dependencies=[Depends(verify_client_sarvam_token)])
+@limiter.limit("60/minute")
 def cancel(request: Request, token: str, client_id: int,
            body: SarvamAppointmentRequest, db: DbSession):
     def operation():
@@ -390,7 +400,6 @@ def cancel(request: Request, token: str, client_id: int,
 
 @router.post("/sarvam/{client_id}/appointments/check-slot",
              response_model=ApiResponse[dict])
-@limiter.limit("60/minute")
 def check_slot_header(
     request: Request,
     client_id: int,
@@ -403,7 +412,6 @@ def check_slot_header(
 
 @router.post("/sarvam/{client_id}/appointments/book",
              response_model=ApiResponse[AppointmentOut])
-@limiter.limit("60/minute")
 def book_header(
     request: Request,
     client_id: int,
@@ -416,7 +424,6 @@ def book_header(
 
 @router.post("/sarvam/{client_id}/appointments/reschedule",
              response_model=ApiResponse[AppointmentOut])
-@limiter.limit("60/minute")
 def reschedule_header(
     request: Request,
     client_id: int,
@@ -429,7 +436,6 @@ def reschedule_header(
 
 @router.post("/sarvam/{client_id}/appointments/cancel",
              response_model=ApiResponse[AppointmentOut])
-@limiter.limit("60/minute")
 def cancel_header(
     request: Request,
     client_id: int,

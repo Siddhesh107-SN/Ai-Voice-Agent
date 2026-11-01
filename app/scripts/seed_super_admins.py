@@ -94,6 +94,7 @@ def seed_super_admins(db: Session | None = None, force_sync_passwords: bool = Fa
 
                 if should_sync:
                     existing.password_hash = hash_password(password)
+                    existing.auth_version += 1
                     print(f"[*] Updated password for existing protected super admin: {email}")
                 else:
                     print(f"[*] Super admin account already exists: {email} (password preserved). "

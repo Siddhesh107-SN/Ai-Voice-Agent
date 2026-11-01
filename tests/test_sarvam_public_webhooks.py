@@ -1,5 +1,6 @@
 from sqlalchemy import func, select
 
+from app.core.config import get_settings
 from app.models.audit_log import AuditLog
 from app.models.call_attempt import CallAttempt
 from app.models.enums import AppointmentStatus
@@ -26,6 +27,19 @@ def _url(client_id, action, token=SECRET):
 def test_public_sarvam_routes_reject_wrong_token(client):
     response = client.post("/api/v1/webhooks/sarvam/wrong/outbound",
                            json={"attempt_id": "attempt-1", "status": "connected"})
+    assert response.status_code == 404
+
+
+def test_outbound_rejects_shared_token_when_legacy_compatibility_is_disabled(
+    client, monkeypatch
+):
+    monkeypatch.setattr(
+        get_settings(), "sarvam_legacy_shared_token_enabled", False
+    )
+    response = client.post(
+        f"/api/v1/webhooks/sarvam/{SECRET}/outbound",
+        json={"attempt_id": "attempt-disabled", "status": "connected"},
+    )
     assert response.status_code == 404
 
 
