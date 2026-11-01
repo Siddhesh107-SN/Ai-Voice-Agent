@@ -11,7 +11,7 @@
 - `.env.example` — documents backend settings, mail providers, Gunicorn, super-admin provisioning, and the isolated test database variable.
 - `README.md` — adds local backend/frontend startup steps and warns that backend tests drop and recreate their database schema.
 - `ai-calling-frontend/.env.example` — documents live/mock mode and frontend backend URL variables.
-- `ai-calling-frontend/README.md` — replaces obsolete mock-switch instructions with `NEXT_PUBLIC_API_MODE`.
+- The legacy frontend README was updated to use `NEXT_PUBLIC_API_MODE`; it is retired in Phase 5.5 because its remaining setup content is covered by the root README.
 - `app/otp_service.py` — defers Resend configuration reads until an OTP send is requested and raises a specific missing-key error.
 - `app/otp_routes.py` — maps missing OTP Resend configuration to HTTP 503.
 - `app/services/email_service.py` — adds a production-console configuration warning helper.
@@ -552,7 +552,7 @@ The complete `PUBLIC_ROUTES` set now contains:
    - `ai-calling-frontend/src/components/TryIt.tsx:7-56`, `src/data/scenes.ts:97,124`, `src/app/(marketing)/page.tsx:7,22` — the public interactive product demo and its sample scenarios are visible in live marketing mode and are intentionally retained; they do not sign in or link to a demo dashboard.
    - `ai-calling-frontend/src/components/WhoFor.tsx:89-93` and `src/app/globals.css:266-267` — the marketing `demo-line` animation is visible live but is only a styling class, not demo data or a role control.
    - `ai-calling-frontend/src/app/onboarding-status/preview/page.tsx:7-104` and `src/components/onboarding-status/StatusView.tsx:123` — sample status scenarios are dev-preview-only; the preview route returns not-found in production.
-   - `ai-calling-frontend/src/components/AuthForm.tsx:6,24` — legacy form includes a demo success message but has no imports/usages in the app, so it is not visible in login/signup or live routes.
+   - The legacy mock-only auth form includes a demo success message but has no imports/usages in the app, so it is not visible in login/signup or live routes; it is retired in Phase 5.5.
    - `ai-calling-frontend/.env.example:11-12` — legacy `NEXT_PUBLIC_DASH_SIMULATE` entry is retained but marked ignored. The live LoginView and SignupView have no sample credentials, demo-account shortcuts, or demo links; no demo password was found.
 3. Files changed:
    - `.env.example` — marked `NEXT_PUBLIC_DASH_SIMULATE` as ignored and documented mock mode as the preview switch.
@@ -645,7 +645,7 @@ The complete `PUBLIC_ROUTES` set now contains:
   debug tracebacks.
 - **Coverage/dead code:** CI runs backend pytest against PostgreSQL 16 and
   applies migrations; the frontend gets a production build only, with no
-  frontend test suite. Legacy OTP components/routes, unused `AuthForm.tsx`,
+  frontend test suite. Legacy OTP components/routes, the unused mock auth form,
   root duplicate API mounts, `NEXT_PUBLIC_DASH_SIMULATE` documentation, and
   the unused landing-page copy merit removal or explicit compatibility
   decisions. Current frontend has a business/appointment role mismatch.
@@ -689,3 +689,56 @@ The complete `PUBLIC_ROUTES` set now contains:
 - Super-admin initial loads now fetch platform-only data and skip tenant
   appointment polling. Updated the runbook with secret-rotation guidance and
   clarified the changed `SARVAM_LEGACY_SHARED_TOKEN_ENABLED` behavior.
+
+# Phase 5.5 CLEANUP
+
+## Change report
+
+- Branch: `phase-2`
+- Base commit: `b2158699ff5faef63f98a375e048818311026a11`
+- Commit: `Phase 5.5 CLEANUP` (hash is recorded in Git metadata and the chat report).
+- No kept file was moved or renamed.
+
+## Markdown inventory
+
+| File | Description and reference status | Decision |
+|---|---|---|
+| `README.md` | Current architecture, local development, CI tests and docs; referenced by Compose, documentation, and the other READMEs. | Keep; it already covers valid frontend setup, so no merge was needed. |
+| `ai-calling-frontend/README.md` | Legacy frontend overview with outdated demo accounts, folder layout, endpoint contract and setup; only historically referenced by this changelog. | Deleted; no current setup information was missing from root README. |
+| `TALKAOR_CODEBASE_REPORT.md` | 1,297-line report describing an obsolete nested backend, old API contracts and stale repository structure; no inbound reference. | Deleted. |
+| `AGENTS.md` | Backend and agent-development instructions; loaded by convention rather than an in-repository link. | Keep. |
+| `CHANGELOG_PHASES.md` | Historical implementation/change record; linked by root README. | Keep and append this report. |
+| `docs/SARVAM_SETUP.md` | Sarvam integration setup; referenced from root README, deployment runbook and changelog. | Keep. |
+| `docs/DEPLOY_RUNBOOK.md` | EC2 deployment and operations instructions; referenced from root README. | Keep. |
+
+## Deleted files
+
+| Path | Size | Why safe | Test/document reference updates |
+|---|---:|---|---|
+| `ai-calling-frontend/README.md` | 279 lines | Legacy setup/design/API guidance is stale; root README already gives current architecture, mock mode, local run instructions, CI and documentation links. Not loaded by code or tooling. | Updated its historical changelog wording; no test or runtime references. |
+| `TALKAOR_CODEBASE_REPORT.md` | 1,297 lines | Stale report includes a separate SQLite backend and structures not present in the current app; no inbound code, CI, Docker, docs, or config reference. | No inbound references or tests. |
+| `ai-calling-frontend/src/components/AuthForm.tsx` | 32 lines | No import, dynamic import, route, or test reference outside itself; it is not a Next.js convention file. `LoginView`/`SignupView` are the current auth screens. | Generalized two historical changelog mentions; no tests referenced it. `forms.tsx` remains because `ContactForm.tsx` imports it. |
+| `.coverage` | 69,632 bytes | Generated coverage database, not imported or runtime-loaded. | Already ignored by `.gitignore` and `.dockerignore`; no tests or docs referenced the artifact. |
+
+## Other inventory findings
+
+- No tracked backup/copy files, Python bytecode/cache files, logs, `.db`, `.sqlite`, or `.sqlite3` files were found in the current index. `.coverage` was the only tracked generated artifact found. The ignore rules already cover the generated coverage/cache/database patterns.
+- Public frontend assets inspected (`poster.jpg`, `call-loop.mp4`, `Armany-Regular.otf`, and `qr-placeholder.svg`) have source-code/configuration references; no unused public asset was identified.
+- `forms.tsx`, marketing components, page/layout/route files, frontend mock data, and the TryIt demo are referenced or runtime/convention-loaded and were retained.
+- Backend route modules are imported and registered through `app/api/router.py`; `app/main.py` also mounts root aliases and the legacy OTP router. No backend module or test was deleted.
+- Remaining exact deleted-path mentions in this section are intentional inventory/history records, not links, imports, or runtime references. The removed README/AuthForm historical references elsewhere in the changelog were generalized.
+
+## Needs a decision
+
+- **In-memory OTP flow:** `app/otp_routes.py` registers `/auth/send-otp` and `/auth/verify-otp`; `app/otp_service.py` holds hashed codes in process memory with expiry/attempt checks and sends through Resend; `OtpStep.tsx` calls those routes but has no current component import. The verify route does not mark database email verification. Preserved as requested. Decide later whether to integrate it with signup or retire it.
+- **Legacy Sarvam routes:** path-token appointment tools, shared-token `/outbound`, and signed `/api/v1/webhooks/sarvam` remain registered and are referenced by tests/docs or provider compatibility. Preserved as requested. Check provider/client usage before a separate disable/removal phase.
+- **Legacy static landing-page archive:** `ai-calling-frontend/existing-landing-page/` is not served/imported by the current Next.js app, but `tsconfig.json` excludes it and the legacy README described it as preserved source. Retained by user decision; decide later whether it remains useful.
+- **Root API aliases:** `app/main.py` separately mounts API routers without `/api/v1`; these may be compatibility paths. Preserve and check deployed consumers before considering retirement.
+
+## Verification
+
+- Deleted names/import paths were searched repository-wide. Remaining references are intentional in this cleanup inventory; no executable imports or links to removed docs remain.
+- Confirmed `app/api/router.py` and `app/main.py` still point only to existing route modules; Next.js page/layout/route files and asset imports were not deleted.
+- `.gitignore` already covers `.coverage`, `__pycache__`, `.pyc`, and local database files.
+- Only deletions and this required changelog edit are expected in the worktree; no kept file path changed.
+- `python -m compileall app tests` and Git whitespace/status checks are the only validation commands permitted in this phase. Pytest, database, Docker, Alembic, npm, and frontend build checks were not run; CI should verify those flows and confirm Next.js has no missing module or asset reference.
