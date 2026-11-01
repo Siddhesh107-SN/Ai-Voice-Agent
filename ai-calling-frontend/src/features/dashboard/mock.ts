@@ -103,6 +103,18 @@ const mockIntegration = (clientId: string): AdminClientIntegration => ({
       `/api/v1/webhooks/sarvam/{TOKEN}/${clientId}/appointments/${action}`,
     ]),
   ),
+  header_tool_url_patterns: Object.fromEntries(
+    ['check-slot', 'book', 'reschedule', 'cancel'].map((action) => [
+      action,
+      `/api/v1/webhooks/sarvam/${clientId}/appointments/${action}`,
+    ]),
+  ),
+  call_completed_url_pattern: `/api/v1/webhooks/sarvam/{TOKEN}/${clientId}/call-completed`,
+  call_completed_header_url_pattern: `/api/v1/webhooks/sarvam/${clientId}/call-completed`,
+  call_completed_header: 'X-Webhook-Token',
+  call_start_url_pattern: `/api/v1/webhooks/sarvam/${clientId}/call-start`,
+  call_start_header: 'X-Tool-Token',
+  tool_token_header: 'X-Tool-Token',
   urls_are_absolute: false,
   credential_exists: false,
   credential_created_at: null,
@@ -182,10 +194,10 @@ const appointments: AdminAppointment[] = [
 ];
 
 const monitoring: AdminMonitoringRow[] = [
-  { client_id: 1, business_name: 'Sunrise Dental Care', access_status: 'active', agent_status: 'active', provider_agent_id_present: true, last_call_time: '2026-10-24T15:12:00Z', minutes_used: 186, minutes_limit: 300, usage_percent: 62, alert: 'none', failed_webhook_events_24h: 0, last_webhook_received_at: '2026-10-24T15:12:00Z', last_tool_call_at: '2026-10-24T15:12:02Z', last_tool_call_error: null },
-  { client_id: 2, business_name: 'Kale Wellness Studio', access_status: 'active', agent_status: 'active', provider_agent_id_present: true, last_call_time: '2026-10-24T15:40:00Z', minutes_used: 96, minutes_limit: 100, usage_percent: 96, alert: 'warning', failed_webhook_events_24h: 2, last_webhook_received_at: '2026-10-24T15:40:00Z', last_tool_call_at: '2026-10-24T15:40:01Z', last_tool_call_error: 'SLOT_TAKEN' },
-  { client_id: 3, business_name: 'Patil Auto Care', access_status: 'active', agent_status: 'inactive', provider_agent_id_present: false, last_call_time: null, minutes_used: 312, minutes_limit: 300, usage_percent: 104, alert: 'limit', failed_webhook_events_24h: 1, last_webhook_received_at: '2026-10-24T14:50:00Z', last_tool_call_at: '2026-10-24T14:20:00Z', last_tool_call_error: null },
-  { client_id: 4, business_name: 'BrightPath Tuition', access_status: 'active', agent_status: null, provider_agent_id_present: false, last_call_time: null, minutes_used: 0, minutes_limit: 700, usage_percent: 0, alert: 'none', failed_webhook_events_24h: 0, last_webhook_received_at: null, last_tool_call_at: null, last_tool_call_error: null },
+  { client_id: 1, business_name: 'Sunrise Dental Care', access_status: 'active', agent_status: 'active', provider_agent_id_present: true, last_call_time: '2026-10-24T15:12:00Z', minutes_used: 186, minutes_limit: 300, usage_percent: 62, alert: 'none', failed_webhook_events_24h: 0, blocked_calls_24h: 0, legacy_token_in_use: false, last_webhook_received_at: '2026-10-24T15:12:00Z', last_tool_call_at: '2026-10-24T15:12:02Z', last_tool_call_error: null },
+  { client_id: 2, business_name: 'Kale Wellness Studio', access_status: 'active', agent_status: 'active', provider_agent_id_present: true, last_call_time: '2026-10-24T15:40:00Z', minutes_used: 96, minutes_limit: 100, usage_percent: 96, alert: 'warning', failed_webhook_events_24h: 2, blocked_calls_24h: 2, legacy_token_in_use: true, last_webhook_received_at: '2026-10-24T15:40:00Z', last_tool_call_at: '2026-10-24T15:40:01Z', last_tool_call_error: 'SLOT_TAKEN' },
+  { client_id: 3, business_name: 'Patil Auto Care', access_status: 'active', agent_status: 'inactive', provider_agent_id_present: false, last_call_time: null, minutes_used: 312, minutes_limit: 300, usage_percent: 104, alert: 'limit', failed_webhook_events_24h: 1, blocked_calls_24h: 1, legacy_token_in_use: false, last_webhook_received_at: '2026-10-24T14:50:00Z', last_tool_call_at: '2026-10-24T14:20:00Z', last_tool_call_error: null },
+  { client_id: 4, business_name: 'BrightPath Tuition', access_status: 'active', agent_status: null, provider_agent_id_present: false, last_call_time: null, minutes_used: 0, minutes_limit: 700, usage_percent: 0, alert: 'none', failed_webhook_events_24h: 0, blocked_calls_24h: 0, legacy_token_in_use: false, last_webhook_received_at: null, last_tool_call_at: null, last_tool_call_error: null },
 ];
 
 const health: AdminHealthDetails = {

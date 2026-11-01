@@ -160,9 +160,10 @@ export function MonitoringView() {
         </div>
       </section>}
       {!rows?.items.length ? <EmptyState>No clients to monitor.</EmptyState> : <>
-        <div className="lw-scroll"><table><thead><tr><th>Business</th><th>Access / agent</th><th>Provider linked</th><th>Last call</th><th>Minutes / alert</th><th>Failed webhooks (24h)</th><th>Last webhook</th><th>Last tool call / error</th></tr></thead>
+        <div className="lw-scroll"><table><thead><tr><th>Business</th><th>Access / agent</th><th>Provider linked</th><th>Last call</th><th>Minutes / alert</th><th>Failed webhooks (24h)</th><th>Blocked calls (24h)</th><th>Legacy token</th><th>Last webhook</th><th>Last tool call / error</th></tr></thead>
           <tbody>{rows.items.map((row) => {
             const needsAttention = row.alert === 'limit' || row.failed_webhook_events_24h > 0 ||
+              row.blocked_calls_24h > 0 || row.legacy_token_in_use ||
               !row.provider_agent_id_present || !row.agent_status || row.agent_status === 'inactive' ||
               !row.last_webhook_received_at;
             return <tr key={row.client_id} className={needsAttention ? 'lw-attention' : ''}>
@@ -170,6 +171,8 @@ export function MonitoringView() {
               <td>{row.provider_agent_id_present ? 'Yes' : 'No'}</td><td><DateLabel value={row.last_call_time} /></td>
               <td>{row.minutes_used} / {row.minutes_limit} min <Meter used={row.minutes_used} limit={row.minutes_limit} /><Status value={row.alert} /></td>
               <td><Status value={row.failed_webhook_events_24h ? 'error' : 'ok'} label={String(row.failed_webhook_events_24h)} /></td>
+              <td><Status value={row.blocked_calls_24h ? 'error' : 'ok'} label={String(row.blocked_calls_24h)} /></td>
+              <td><Status value={row.legacy_token_in_use ? 'warning' : 'ok'} label={row.legacy_token_in_use ? 'In use' : 'No use'} /></td>
               <td><DateLabel value={row.last_webhook_received_at} /></td><td><DateLabel value={row.last_tool_call_at} />{row.last_tool_call_error && <div>{row.last_tool_call_error}</div>}</td>
             </tr>;
           })}</tbody></table></div>

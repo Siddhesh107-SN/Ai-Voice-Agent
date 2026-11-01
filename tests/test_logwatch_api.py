@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
@@ -204,6 +205,66 @@ def test_monitoring_is_tenant_scoped_and_paginated(client, db, watch_tenants):
     assert by_id[watch_tenants["a"]["id"]]["last_tool_call_error"] == "A-only error"
     assert by_id[watch_tenants["b"]["id"]]["last_tool_call_error"] == "B-only error"
     assert "provider-a" not in response.text
+
+
+def test_monitoring_adds_blocked_call_and_legacy_token_aggregates(
+    client, db, watch_tenants,
+):
+    now = datetime.now(timezone.utc)
+    client_a = watch_tenants["a"]["id"]
+    client_b = watch_tenants["b"]["id"]
+    db.add_all([
+        AuditLog(
+            client_id=client_a,
+            action="sarvam_tool.call_start",
+            details={"success": False, "error_code": "OVER_LIMIT"},
+            created_at=now - timedelta(hours=2),
+        ),
+        AuditLog(
+            client_id=client_a,
+            action="sarvam_tool.call_start",
+            details={"success": False, "error_code": "OVER_LIMIT"},
+            created_at=now - timedelta(hours=5),
+        ),
+        AuditLog(
+            client_id=client_a,
+            action="sarvam_tool.call_start",
+            details={"success": False, "error_code": "OVER_LIMIT"},
+            created_at=now - timedelta(days=2),
+        ),
+        AuditLog(
+            client_id=client_a,
+            action="sarvam_tool.book",
+            details={"success": True, "legacy_shared_token_used": True},
+            created_at=now - timedelta(days=6),
+        ),
+        AuditLog(
+            client_id=client_a,
+            action="sarvam_tool.book",
+            details={"success": True, "legacy_shared_token_used": True},
+            created_at=now - timedelta(days=8),
+        ),
+        AuditLog(
+            client_id=client_b,
+            action="sarvam_tool.call_start",
+            details={"success": True},
+            created_at=now - timedelta(hours=1),
+        ),
+    ])
+    db.commit()
+
+    response = client.get(
+        "/api/v1/admin/monitoring?page=1&limit=100",
+        headers=auth_headers(watch_tenants["root_token"]),
+    )
+    assert response.status_code == 200
+    rows = {row["client_id"]: row for row in response.json()["data"]}
+    assert rows[client_a]["blocked_calls_24h"] == 2
+    assert rows[client_a]["legacy_token_in_use"] is True
+    assert rows[client_b]["blocked_calls_24h"] == 0
+    assert rows[client_b]["legacy_token_in_use"] is False
+    assert rows[client_a]["failed_webhook_events_24h"] == 0
+    assert rows[client_a]["minutes_used"] == 0
 
 
 def test_health_details_exposes_presence_booleans_not_secret_values(

@@ -27,3 +27,5 @@ class BillingMeOut(BaseModel):
     alert: Literal["none", "warning", "limit"]
     renews_on: date | datetime
     next_payment_amount: int | None = None
+    calls_paused: bool
+    pause_at_percent: int

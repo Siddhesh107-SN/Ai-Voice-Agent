@@ -14,6 +14,7 @@ from app.models.audit_log import AuditLog
 from app.models.appointment import Appointment, AppointmentHistory
 from app.models.call import Call
 from app.models.client import Client
+from app.models.client_tool_credential import ClientToolCredential
 from app.models.customer import Customer
 from app.models.enquiry import Enquiry
 from app.models.enums import (AccessStatus, AgentStatus, AppointmentAction,
@@ -389,6 +390,47 @@ class AdminService:
             for client_id, last_received, failed_count in webhooks
         }
 
+        legacy_since = datetime.now(timezone.utc) - timedelta(days=7)
+        tool_health = self.db.execute(
+            select(
+                AuditLog.client_id,
+                func.sum(
+                    case(
+                        (
+                            and_(
+                                AuditLog.action == "sarvam_tool.call_start",
+                                AuditLog.created_at >= since,
+                                AuditLog.details["success"].as_boolean().is_(False),
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ),
+                func.max(
+                    case(
+                        (
+                            AuditLog.details["legacy_shared_token_used"]
+                            .as_boolean()
+                            .is_(True),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ),
+            )
+            .where(
+                AuditLog.client_id.in_(client_ids),
+                AuditLog.action.like("sarvam_tool.%"),
+                AuditLog.created_at >= legacy_since,
+            )
+            .group_by(AuditLog.client_id)
+        ).all()
+        tool_health_by_client = {
+            client_id: (int(blocked_count or 0), bool(legacy_in_use))
+            for client_id, blocked_count, legacy_in_use in tool_health
+        }
+
         latest_tool = (
             select(
                 AuditLog.client_id.label("client_id"),
@@ -434,6 +476,9 @@ class AdminService:
             billing_data = billing[client.id]
             agent_status, provider_present = agent_summary.get(client.id, (None, False))
             last_webhook, failed_webhooks = webhook_summary.get(client.id, (None, 0))
+            blocked_calls, legacy_token_in_use = tool_health_by_client.get(
+                client.id, (0, False)
+            )
             items.append(AdminMonitoringItem(
                 client_id=client.id,
                 business_name=sanitize_payload(client.business_name),
@@ -446,6 +491,8 @@ class AdminService:
                 usage_percent=billing_data["usage_percent"],
                 alert=billing_data["alert"],
                 failed_webhook_events_24h=failed_webhooks,
+                blocked_calls_24h=blocked_calls,
+                legacy_token_in_use=legacy_token_in_use,
                 last_webhook_received_at=last_webhook,
                 last_tool_call_at=tool_times.get(client.id),
                 last_tool_call_error=sanitize_payload(tool_errors.get(client.id)),
@@ -708,6 +755,19 @@ class AdminService:
         agents = self.db.scalars(
             select(Agent).order_by(Agent.created_at.desc(), Agent.id.desc())
         ).all()
+        agent_client_ids = {agent.client_id for agent in agents}
+        active_credential_client_ids = (
+            set(
+                self.db.scalars(
+                    select(ClientToolCredential.client_id).where(
+                        ClientToolCredential.client_id.in_(agent_client_ids),
+                        ClientToolCredential.revoked_at.is_(None),
+                    )
+                ).all()
+            )
+            if agent_client_ids
+            else set()
+        )
 
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         items: list[AdminAgentItem] = []
@@ -730,6 +790,9 @@ class AdminService:
                     languages=languages if isinstance(languages, list) else [str(languages)],
                     phone=agent.phone_number,
                     phone_number=agent.phone_number,
+                    provider_agent_id=agent.provider_agent_id,
+                    status=agent.status.value if hasattr(agent.status, "value") else str(agent.status),
+                    tool_token_exists=agent.client_id in active_credential_client_ids,
                     online=agent.is_active,
                     calls_today=calls_today,
                     business_id=agent.client_id,

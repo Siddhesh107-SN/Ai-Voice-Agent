@@ -16,14 +16,12 @@ from app.models.call import Call
 from app.models.client import Client
 from app.models.customer import Customer
 from app.models.enums import (
-    AccessStatus,
     CallDirection,
     CallStatus,
-    ClientStatus,
     WebhookEventStatus,
 )
 from app.models.webhook_event import WebhookEvent
-from app.services.billing_service import BillingService
+from app.services.billing_service import BillingService, call_start_reason
 from app.services.tool_call_log_service import (
     record_call_start_denial,
     record_unlinked_sarvam_call,
@@ -293,22 +291,8 @@ def call_start_status(
         plan = billing["plan"]
         minutes_remaining = billing["minutes_remaining"]
 
-        if client.access_status == AccessStatus.SUSPENDED:
-            active, reason = False, "suspended"
-        elif (
-            not client.is_active
-            or client.status != ClientStatus.ACTIVE
-            or client.access_status != AccessStatus.ACTIVE
-        ):
-            active, reason = False, "inactive"
-        else:
-            minutes_limit = billing["minutes_limit"]
-            minutes_used = billing["minutes_used"]
-            over_limit = minutes_limit <= 0 or (
-                minutes_used * 100
-                >= minutes_limit * (100 + max(0, overage_grace_percent))
-            )
-            active, reason = (False, "over_limit") if over_limit else (True, "ok")
+        reason = call_start_reason(client, billing, overage_grace_percent)
+        active = reason == "ok"
 
         if not active:
             try:

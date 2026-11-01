@@ -85,6 +85,8 @@ export interface AdminMonitoringRow {
   usage_percent: number;
   alert: 'none' | 'warning' | 'limit' | string;
   failed_webhook_events_24h: number;
+  blocked_calls_24h: number;
+  legacy_token_in_use: boolean;
   last_webhook_received_at: string | null;
   last_tool_call_at: string | null;
   last_tool_call_error: string | null;
@@ -116,6 +118,13 @@ export interface AdminLinkedAgent {
 export interface AdminClientIntegration {
   signed_event_webhook_url: string;
   tool_url_patterns: Record<string, string>;
+  header_tool_url_patterns: Record<string, string>;
+  call_completed_url_pattern: string;
+  call_completed_header_url_pattern: string;
+  call_completed_header: string;
+  call_start_url_pattern: string;
+  call_start_header: string;
+  tool_token_header: string;
   urls_are_absolute: boolean;
   credential_exists: boolean;
   credential_created_at: string | null;
@@ -126,6 +135,13 @@ export interface AdminClientIntegration {
 export interface AdminClientToolToken {
   token: string;
   tool_urls: Record<string, string>;
+  header_tool_urls: Record<string, string>;
+  call_completed_url: string;
+  call_completed_header_url: string;
+  call_completed_header: string;
+  call_start_url: string;
+  call_start_header: string;
+  tool_token_header: string;
   urls_are_absolute: boolean;
 }
 export interface BillingMe {
@@ -138,6 +154,8 @@ export interface BillingMe {
   alert: 'none' | 'warning' | 'limit';
   renews_on: string;
   next_payment_amount?: number | null;
+  calls_paused: boolean;
+  pause_at_percent: number;
 }
 export interface StaffMember { id: string; name: string; title: string; days: boolean[] } // Mon..Sun
 export interface DayHours { open: string; close: string; closed: boolean } // Mon..Sun

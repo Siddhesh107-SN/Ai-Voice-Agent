@@ -487,3 +487,47 @@ The complete `PUBLIC_ROUTES` set now contains:
 - `python -m compileall app tests` passed. `git diff --check` passed. Pytest, database, Docker, and Alembic commands were not run; tests were added for CI.
 - No dependencies or frontend files changed.
 - Payload assumptions: `attempt_id` identifies outbound calls; callbacks with neither a usable caller number nor interaction/attempt ID are ignored. Both `from_number`/`to_number` and common caller/dialed aliases are accepted. `recording_url` is deliberately not inferred from the payload. The existing database has a global `(provider, event_id)` unique constraint; cross-tenant collisions are safely ignored rather than altering another tenant's webhook event.
+
+## Phase 4B MINUTECUT-UI
+
+### Change report
+
+- Branch: `phase-2`; base commit: `63c40278470318333c42ee8ea8206a8b0a9284c0`. Commit message: `Phase 4B MINUTECUT-UI`; the resulting hash is reported in the delivery message.
+- Files changed:
+  - `.gitignore` — ignores `.vscode/`.
+  - `.vscode/settings.json` — was tracked; removed from the Git index as requested and retained locally.
+  - `docs/SARVAM_SETUP.md` — adds placeholder-only Sarvam configuration, testing, legacy-token retirement, and troubleshooting steps, with console limitations noted.
+  - `ai-calling-frontend/src/features/dashboard/api.ts` — consumes the additive admin/billing data, removes per-client Integration fetches from the platform agent list, and adds mock billing states.
+  - `ai-calling-frontend/src/features/dashboard/mock.ts` — adds Phase 4A URL/header samples and monitoring signals for mock mode.
+  - `ai-calling-frontend/src/features/dashboard/types.ts` — models integration setup URLs/headers, billing pause fields, and monitoring indicators.
+  - `ai-calling-frontend/src/features/dashboard/views-logwatch.tsx` — displays blocked-call and legacy-token indicators.
+  - `ai-calling-frontend/src/features/dashboard/views-platform.tsx` — displays header-based tool, call-completed, and call-start setup details and one-time URLs.
+  - `ai-calling-frontend/src/features/dashboard/views-tenant.tsx` — shows the assigned phone and status, places plan/credit information on the client dashboard, and renders each billing state.
+  - `app/schemas/admin.py` — adds agent-list and monitoring response fields.
+  - `app/schemas/billing.py` — adds `calls_paused` and `pause_at_percent` to the billing response.
+  - `app/services/admin_service.py` — populates agent token presence and batched monitoring audit aggregates.
+  - `app/services/billing_service.py` — shares the call-start decision logic and returns the additive pause fields.
+  - `app/services/sarvam_call_service.py` — uses the shared call-start decision helper.
+  - `tests/test_agentlink_api.py` — tests agent-list additions and client-scoped credential presence.
+  - `tests/test_b2_features.py` — tests billing pause thresholds, old billing fields, and tenant scoping.
+  - `tests/test_logwatch_api.py` — tests the 24-hour blocked-call and 7-day legacy-token aggregates.
+
+### Database, API, and configuration
+
+- Database changes: none. No migrations or schema changes.
+- `GET /api/v1/admin/agents` adds `provider_agent_id`, `status`, and `tool_token_exists`; `phone_number` was already returned and remains available. All existing response fields are unchanged. The token-presence lookup is batched, and the platform list no longer makes per-client Integration calls.
+- `GET /api/v1/billing/me` adds `calls_paused` and `pause_at_percent`; existing response fields are unchanged. `calls_paused` reuses the call-start gate decision and is true only for the over-limit pause reason.
+- `GET /api/v1/admin/monitoring` adds `blocked_calls_24h` and `legacy_token_in_use`; existing response fields are unchanged. Aggregates are grouped by client in one query for the current page.
+- No routes were added or changed. The frontend now consumes the Phase 4A `GET /api/v1/admin/clients/{client_id}/integration` URL/header fields and the corresponding `POST /api/v1/admin/clients/{client_id}/tool-token` response fields. Those existing response shapes are unchanged.
+- Public Sarvam route rate limits were checked and already exist: both call-completed variants and call-start are limited to 30 requests/minute/IP; each of the four header-based tool routes is limited to 60 requests/minute/IP. The existing signed webhook remains limited to 120 requests/minute/IP. No rate-limit change was necessary.
+- Environment variables and other configuration: unchanged. No dependencies were added. `.vscode/` was tracked before this change and is now ignored.
+
+### Role behavior, tests, and remaining work
+
+- Super admin: Agent links show provider agent ID, status, phone, and token presence from the agent-list endpoint. Integration displays the Phase 4A URLs, headers, token metadata, copy controls, and legacy-token help; token material remains component state and appears only in the one-time modal.
+- Client admin and staff: Dashboard shows the assigned phone/status and billing minutes/pause state. Agent creation/deletion/editing remains unavailable to clients; the existing power toggle sends only `{status}`. Super-admin adapters continue to reject client roles.
+- Mock mode: includes normal, 80% warning, 100% limit, and paused billing samples, selectable from the dashboard billing card. Integration URL and header samples remain relative.
+- The billing API exposes the existing `plan` key (for example, `growth`) but does not expose a separate display-name field; the dashboard displays the returned value rather than inventing a plan name.
+- Tests added or extended: `test_admin_agent_list_includes_link_fields_and_client_token_presence`, `test_billing_me_success_and_alerts`, `test_billing_pause_fields_are_scoped_to_the_signed_in_tenant`, and `test_monitoring_adds_blocked_call_and_legacy_token_aggregates`.
+- Verification: Python AST parsing passed for all eight modified Python files; `git diff --check` passed. Pytest, database commands, npm install, and frontend build were not run as requested; build and tests remain for CI.
+- The Sarvam console steps are documented with placeholders only. Exact console controls, secret-reference syntax, and response-to-variable mapping depend on Sarvam behavior that this repository cannot verify.

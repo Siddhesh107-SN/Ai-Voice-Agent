@@ -126,6 +126,42 @@ def test_admin_agent_and_integration_routes_require_super_admin(client, db):
     assert all(row.client_id == tenant["id"] for row in audit_rows)
 
 
+def test_admin_agent_list_includes_link_fields_and_client_token_presence(client):
+    tenant_a = _client(client, "agentlist-a@example.com", "Agent List A")
+    tenant_b = _client(client, "agentlist-b@example.com", "Agent List B")
+    root = super_admin_headers(client)
+    agent_a = _create_agent(client, root, tenant_a["id"]).json()["data"]
+    agent_b = _create_agent(
+        client,
+        root,
+        tenant_b["id"],
+        name="Veda",
+        provider_agent_id="sarvam-agent-2",
+        phone_number="+91 98765 43211",
+    ).json()["data"]
+    _new_tool_token(client, root, tenant_a["id"])
+
+    response = client.get("/api/v1/admin/agents", headers=root)
+    assert response.status_code == 200
+    by_id = {row["id"]: row for row in response.json()}
+    listed_a = by_id[agent_a["id"]]
+    listed_b = by_id[agent_b["id"]]
+
+    assert listed_a["provider_agent_id"] == "sarvam-agent-1"
+    assert listed_a["status"] == "active"
+    assert listed_a["phone_number"] == "+919876543210"
+    assert listed_a["tool_token_exists"] is True
+    assert listed_b["provider_agent_id"] == "sarvam-agent-2"
+    assert listed_b["status"] == "active"
+    assert listed_b["phone_number"] == "+919876543211"
+    assert listed_b["tool_token_exists"] is False
+    assert listed_a["name"] == "Aria"
+    assert listed_a["business_id"] == tenant_a["id"]
+    assert listed_a["business_name"] == "Agent List A"
+    assert isinstance(listed_a["online"], bool)
+    assert isinstance(listed_a["calls_today"], int)
+
+
 def test_agent_phone_provider_uniqueness_and_validation(client):
     tenant_a = _client(client, "agentlink-a@example.com", "Client A")
     tenant_b = _client(client, "agentlink-b@example.com", "Client B")

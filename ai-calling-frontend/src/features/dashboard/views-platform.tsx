@@ -460,6 +460,34 @@ function ClientIntegrationDialog({ clientId, clientName, onToken }: { clientId: 
             </div>
           ))}
         </div>
+        <h4>Header-based tool URLs</h4>
+        <p className="mut">Add request header <code>{integration.tool_token_header}: {'{TOKEN}'}</code>.</p>
+        <div style={{ display: 'grid', gap: 8 }}>
+          {Object.entries(integration.header_tool_url_patterns).map(([action, url]) => (
+            <div key={action}>
+              <small>{action}</small>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><code className="mono" style={{ wordBreak: 'break-all' }}>{url}</code><CopyButton value={url} /></div>
+            </div>
+          ))}
+          <CopyButton value={`${integration.tool_token_header}: {TOKEN}`} label="Copy header template" />
+        </div>
+        <h4>Call-completed webhook</h4>
+        <div style={{ display: 'grid', gap: 8 }}>
+          {[
+            ['URL', integration.call_completed_url_pattern],
+            [`${integration.call_completed_header} URL`, integration.call_completed_header_url_pattern],
+          ].map(([label, url]) => (
+            <div key={label}>
+              <small>{label}</small>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><code className="mono" style={{ wordBreak: 'break-all' }}>{url}</code><CopyButton value={url} /></div>
+            </div>
+          ))}
+          <CopyButton value={`${integration.call_completed_header}: {TOKEN}`} label={`Copy ${integration.call_completed_header} header`} />
+        </div>
+        <h4>Call-start hook</h4>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><code className="mono" style={{ wordBreak: 'break-all' }}>{integration.call_start_url_pattern}</code><CopyButton value={integration.call_start_url_pattern} /></div>
+        <p className="mut">Add request header <code>{integration.call_start_header}: {'{TOKEN}'}</code>.</p>
+        <CopyButton value={`${integration.call_start_header}: {TOKEN}`} label={`Copy ${integration.call_start_header} header`} />
         <h4>Tool token</h4>
         <p><span className={`st ${integration.credential_exists ? 'completed' : 'rescheduled'}`}>{integration.credential_exists ? 'Token exists' : 'No token'}</span></p>
         <dl className="lw-details">
@@ -533,6 +561,30 @@ function IssuedTokenDialog({ token, clientName, onClose }: { token: AdminClientT
             </div>
           ))}
         </div>
+        <h4>Header-based tool URLs</h4>
+        <p>Request header: <code>{token.tool_token_header}: {'{TOKEN}'}</code></p>
+        <div style={{ display: 'grid', gap: 8 }}>
+          {Object.entries(token.header_tool_urls).map(([action, url]) => (
+            <div key={action}>
+              <small>{action}</small>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><code className="mono" style={{ wordBreak: 'break-all' }}>{url}</code><CopyButton value={url} /></div>
+            </div>
+          ))}
+          <CopyButton value={`${token.tool_token_header}: {TOKEN}`} label="Copy header template" />
+        </div>
+        <h4>Call-completed webhook</h4>
+        {[['URL', token.call_completed_url], [`${token.call_completed_header} URL`, token.call_completed_header_url]].map(([label, url]) => (
+          <div key={label}>
+            <small>{label}</small>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><code className="mono" style={{ wordBreak: 'break-all' }}>{url}</code><CopyButton value={url} /></div>
+          </div>
+        ))}
+        <p>Request header: <code>{token.call_completed_header}: {'{TOKEN}'}</code></p>
+        <CopyButton value={`${token.call_completed_header}: {TOKEN}`} label={`Copy ${token.call_completed_header} header`} />
+        <h4>Call-start hook</h4>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><code className="mono" style={{ wordBreak: 'break-all' }}>{token.call_start_url}</code><CopyButton value={token.call_start_url} /></div>
+        <p>Request header: <code>{token.call_start_header}: {'{TOKEN}'}</code></p>
+        <CopyButton value={`${token.call_start_header}: {TOKEN}`} label={`Copy ${token.call_start_header} header`} />
         <div className="acts"><button onClick={onClose}>Close</button></div>
       </div>
     </div>

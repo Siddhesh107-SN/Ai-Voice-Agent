@@ -68,6 +68,9 @@ class AdminAgentItem(BaseModel):
     languages: list[str] = ["English"]
     phone: str | None = None
     phone_number: str | None = None
+    provider_agent_id: str | None = None
+    status: str
+    tool_token_exists: bool = False
     online: bool = True
     calls_today: int = 0
     business_id: int
@@ -161,6 +164,8 @@ class AdminMonitoringItem(BaseModel):
     usage_percent: float
     alert: str
     failed_webhook_events_24h: int
+    blocked_calls_24h: int
+    legacy_token_in_use: bool
     last_webhook_received_at: datetime | None = None
     last_tool_call_at: datetime | None = None
     last_tool_call_error: str | None = None
