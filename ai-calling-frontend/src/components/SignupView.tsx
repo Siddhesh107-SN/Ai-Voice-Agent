@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import AuthShell from "@/components/AuthShell";
 import { BotState } from "@/components/AuthBots";
 import { authConfig } from "@/config/auth";
+import { ApiError } from "@/lib/http";
 import { signupUser } from "@/services/auth";
 import { writeDraft, FLOW_ROUTES } from "@/lib/talkaor-flow/flow-state";
 
@@ -31,6 +32,7 @@ export default function SignupView() {
   // Errors and submission state
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState("");
+  const [submitErrorCode, setSubmitErrorCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const typingTimer = useRef<number>();
@@ -74,8 +76,6 @@ export default function SignupView() {
         return next;
       });
     }
-    setSubmitError("");
-
     setBotState("typing");
     window.clearTimeout(typingTimer.current);
     typingTimer.current = window.setTimeout(() => {
@@ -145,6 +145,8 @@ export default function SignupView() {
     if (isSubmitting) return;
 
     setSubmitError("");
+    setSubmitErrorCode("");
+    setErrors({});
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
@@ -174,6 +176,11 @@ export default function SignupView() {
     } catch (err: any) {
       const msg = err.message || "Failed to create account. Please try again.";
       setSubmitError(msg);
+      setSubmitErrorCode(
+        err instanceof ApiError && err.message === "Unable to verify the dashboard session."
+          ? err.code
+          : "",
+      );
       triggerErrorState(msg);
     } finally {
       setIsSubmitting(false);
@@ -312,7 +319,14 @@ export default function SignupView() {
                 id="countryCode"
                 aria-label="Country code"
                 value={countryCode}
-                onChange={(e) => setCountryCode(e.target.value)}
+                onChange={(e) => {
+                  setCountryCode(e.target.value);
+                  setErrors((prev) => {
+                    const next = { ...prev };
+                    delete next.phone;
+                    return next;
+                  });
+                }}
                 onFocus={handleNormalFocus}
                 onBlur={handleBlur}
                 className="w-[72px] flex-none rounded-[8px] px-2 py-1.5 text-[13px] text-[var(--c-auth-ink)] transition-all outline-none"
@@ -498,6 +512,7 @@ export default function SignupView() {
         {submitError && (
           <div role="alert" aria-live="assertive" className="text-xs p-2 rounded-lg bg-[rgba(255,154,139,0.12)] border border-[rgba(255,154,139,0.3)] text-[var(--c-auth-error)] mt-1.5">
             {submitError}
+            {submitErrorCode && <small className="block mt-1">Code: {submitErrorCode}</small>}
           </div>
         )}
 

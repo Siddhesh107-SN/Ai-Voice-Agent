@@ -1,6 +1,7 @@
 # Environment variables and private credentials
 .env
 .env.*
+*.env
 !.env.example
 *.pem
 

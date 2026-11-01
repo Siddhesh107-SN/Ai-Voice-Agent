@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AuthShell from "@/components/AuthShell";
 import { BotState } from "@/components/AuthBots";
 import { authConfig } from "@/config/auth";
 import { DASHBOARD_PATH, ONBOARDING_STATUS_PATH } from "@/config/onboardingStatus";
+import { ApiError } from "@/lib/http";
 import { loginUser } from "@/services/auth";
 
 export default function LoginView() {
@@ -22,11 +23,27 @@ export default function LoginView() {
   // Errors and submission state
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState("");
+  const [submitErrorCode, setSubmitErrorCode] = useState("");
   const [submitSuccess, setSubmitSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const typingTimer = useRef<number>();
   const errorResetTimer = useRef<number>();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionErrorCode = params.get("sessionErrorCode");
+    if (sessionErrorCode && /^[A-Z0-9_]+$/.test(sessionErrorCode)) {
+      if (sessionErrorCode === "TOKEN_EXPIRED") {
+        setSubmitError("Session expired. Please log in again.");
+      } else {
+        setSubmitError("Unable to verify the dashboard session.");
+        setSubmitErrorCode(sessionErrorCode);
+      }
+    } else if (params.get("expired") === "1") {
+      setSubmitError("Session expired. Please log in again.");
+    }
+  }, []);
 
   const handleNormalFocus = () => {
     if (botState !== "error") {
@@ -58,8 +75,6 @@ export default function LoginView() {
         return next;
       });
     }
-    setSubmitError("");
-
     setBotState("typing");
     window.clearTimeout(typingTimer.current);
     typingTimer.current = window.setTimeout(() => {
@@ -100,7 +115,9 @@ export default function LoginView() {
     if (isSubmitting) return;
 
     setSubmitError("");
+    setSubmitErrorCode("");
     setSubmitSuccess("");
+    setErrors({});
 
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
@@ -136,6 +153,11 @@ export default function LoginView() {
     } catch (err: any) {
       const msg = err.message || "Invalid credentials or network issue. Please try again.";
       setSubmitError(msg);
+      setSubmitErrorCode(
+        err instanceof ApiError && err.message === "Unable to verify the dashboard session."
+          ? err.code
+          : "",
+      );
       triggerErrorState(msg);
     } finally {
       setIsSubmitting(false);
@@ -213,7 +235,6 @@ export default function LoginView() {
                     return next;
                   });
                 }
-                setSubmitError("");
               }}
               onFocus={handlePasswordFocus}
               onBlur={handleBlur}
@@ -255,6 +276,7 @@ export default function LoginView() {
         {submitError && (
           <div role="alert" aria-live="assertive" className="text-xs p-2.5 rounded-lg bg-[rgba(255,154,139,0.12)] border border-[rgba(255,154,139,0.3)] text-[var(--c-auth-error)] mt-2">
             {submitError}
+            {submitErrorCode && <small className="block mt-1">Code: {submitErrorCode}</small>}
           </div>
         )}
 

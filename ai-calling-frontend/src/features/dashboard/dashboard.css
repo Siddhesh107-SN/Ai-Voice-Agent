@@ -82,7 +82,8 @@
 .tk-dash label{display:grid;gap:4px;font-size:12px;color:var(--mut)}
 .tk-dash input,.tk-dash select,.tk-dash textarea{font:inherit;margin:0;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--navy)}
 .tk-dash .tl{border-left:2px solid var(--line);margin-left:6px;padding-left:16px;display:grid;gap:12px}
-.tk-dash .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--navy);color:var(--bg);padding:10px 18px;border-radius:12px;z-index:30}
+.tk-dash .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--navy);color:var(--bg);padding:10px 18px;border-radius:12px;z-index:30;display:flex;align-items:center;gap:12px}
+.tk-dash .toast button{border:0;background:transparent;color:inherit;font:inherit;font-size:18px;line-height:1;cursor:pointer;padding:2px}
 .tk-dash .bot{animation:bob 3s ease-in-out infinite}
 @keyframes bob{50%{transform:translateY(-6px)}}
 @media(prefers-reduced-motion:reduce){.tk-dash .bot{animation:none}

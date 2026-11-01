@@ -54,7 +54,15 @@ export function MockForm({ fields, submit, success, onValid }: { fields: Spec[];
           "aria-invalid": errs[f.name] ? true : undefined,
           "aria-describedby": errs[f.name] ? `${f.name}-err` : undefined,
           value: vals[f.name] ?? "",
-          onChange: (e: React.ChangeEvent<HTMLInputElement & HTMLTextAreaElement>) => setVals((v) => ({ ...v, [f.name]: e.target.value })),
+          onChange: (e: React.ChangeEvent<HTMLInputElement & HTMLTextAreaElement>) => {
+            setVals((v) => ({ ...v, [f.name]: e.target.value }));
+            setErrs((current) => {
+              if (!current[f.name]) return current;
+              const next = { ...current };
+              delete next[f.name];
+              return next;
+            });
+          },
         } as const;
         return (
           <Field key={f.name} id={f.name} label={f.label} error={errs[f.name]}>

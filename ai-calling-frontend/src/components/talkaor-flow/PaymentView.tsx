@@ -155,8 +155,11 @@ export default function PaymentView() {
   const handleCycleChange = (newCycle: BillingCycle) => {
     setBillingCycle(newCycle);
     writeDraft({ billingCycle: newCycle });
-    // Reset submission errors if any
-    setSubmitError(null);
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.amount;
+      return next;
+    });
   };
 
   // Copy UPI ID handler
@@ -215,6 +218,11 @@ export default function PaymentView() {
     }
     setScreenshotFile(null);
     setScreenshotPreview(null);
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.screenshot;
+      return next;
+    });
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -267,6 +275,7 @@ export default function PaymentView() {
     if (isSubmitting) return;
 
     setSubmitError(null);
+    setErrors({});
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
@@ -644,7 +653,6 @@ export default function PaymentView() {
                           return n;
                         });
                       }
-                      setSubmitError(null);
                     }}
                     aria-invalid={errors.transactionId ? true : undefined}
                     aria-describedby={errors.transactionId ? "err-txId" : "help-txId"}
@@ -710,7 +718,6 @@ export default function PaymentView() {
                           return n;
                         });
                       }
-                      setSubmitError(null);
                     }}
                     aria-invalid={errors.paymentDate ? true : undefined}
                     aria-describedby={errors.paymentDate ? "err-pDate" : "help-pDate"}

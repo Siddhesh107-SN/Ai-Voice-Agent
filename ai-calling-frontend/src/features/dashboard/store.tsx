@@ -8,6 +8,14 @@ import { logoutUser } from '@/lib/http';
 import { AUTH_CHANNEL, AUTH_LOGOUT_KEY } from '@/lib/auth-channel';
 
 export type Theme = 'dark' | 'light';
+export type ToastKind = 'info' | 'error';
+
+type Toast = { id: number; text: string; kind: ToastKind };
+type ToastTimer = {
+  timer: ReturnType<typeof setTimeout> | null;
+  expiresAt: number;
+  remaining: number;
+};
 
 function emptyDashboardData(): MockData {
   return {
@@ -58,8 +66,11 @@ interface Ctx {
   can: boolean;
   isSA: boolean;
   actor: string;
-  toast: (t: string) => void;
-  toasts: { id: number; text: string }[];
+  toast: (t: string, kind?: ToastKind) => void;
+  toasts: Toast[];
+  dismissToast: (id: number) => void;
+  pauseToast: (id: number) => void;
+  resumeToast: (id: number) => void;
   log: (t: string, l?: LogLevel) => void;
   modal: ReactNode;
   openModal: (n: ReactNode) => void;
@@ -111,7 +122,8 @@ export function DashboardProvider({
   }));
 
   const [modal, setModal] = useState<ReactNode>(null);
-  const [toasts, setToasts] = useState<{ id: number; text: string }[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastTimers = useRef(new Map<number, ToastTimer>());
   const [dashboardError, setDashboardError] = useState(false);
   const [dashboardLoaded, setDashboardLoaded] = useState(false);
   const logoutStartedRef = useRef(false);
@@ -153,10 +165,44 @@ export function DashboardProvider({
       user: next.user ? { ...next.user, role: prev.role } : next.user,
     };
   }), []);
-  const toast = useCallback((text: string) => {
+  const dismissToast = useCallback((id: number) => {
+    const entry = toastTimers.current.get(id);
+    if (entry?.timer) clearTimeout(entry.timer);
+    toastTimers.current.delete(id);
+    setToasts((current) => current.filter((item) => item.id !== id));
+  }, []);
+
+  const toast = useCallback((text: string, kind: ToastKind = 'info') => {
     const id = Date.now() + Math.random();
-    setToasts((t) => [...t, { id, text }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2500);
+    const duration = kind === 'error' ? 8000 : 2500;
+    const timer = setTimeout(() => {
+      toastTimers.current.delete(id);
+      setToasts((current) => current.filter((item) => item.id !== id));
+    }, duration);
+    toastTimers.current.set(id, {
+      timer,
+      expiresAt: Date.now() + duration,
+      remaining: duration,
+    });
+    setToasts((current) => [...current, { id, text, kind }]);
+  }, []);
+
+  const pauseToast = useCallback((id: number) => {
+    const entry = toastTimers.current.get(id);
+    if (!entry?.timer) return;
+    clearTimeout(entry.timer);
+    entry.timer = null;
+    entry.remaining = Math.max(0, entry.expiresAt - Date.now());
+  }, []);
+
+  const resumeToast = useCallback((id: number) => {
+    const entry = toastTimers.current.get(id);
+    if (!entry || entry.timer) return;
+    entry.expiresAt = Date.now() + entry.remaining;
+    entry.timer = setTimeout(() => {
+      toastTimers.current.delete(id);
+      setToasts((current) => current.filter((item) => item.id !== id));
+    }, entry.remaining);
   }, []);
 
   const log = useCallback(
@@ -213,6 +259,10 @@ export function DashboardProvider({
       window.removeEventListener('storage', handleStorage);
       channelRef.current?.close();
       channelRef.current = null;
+      toastTimers.current.forEach(({ timer }) => {
+        if (timer) clearTimeout(timer);
+      });
+      toastTimers.current.clear();
     };
   }, [logout]);
 
@@ -305,6 +355,9 @@ export function DashboardProvider({
         actor,
         toast,
         toasts,
+        dismissToast,
+        pauseToast,
+        resumeToast,
         log,
         modal,
         openModal: setModal,

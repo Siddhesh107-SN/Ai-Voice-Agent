@@ -59,6 +59,16 @@ export default function ContactForm() {
     }
   };
 
+  const updateField = (field: keyof typeof vals, value: string) => {
+    setVals((current) => ({ ...current, [field]: value }));
+    setErrs((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  };
+
   if (done) {
     return (
       <div role="status" className="card p-8">
@@ -86,7 +96,7 @@ export default function ContactForm() {
           aria-invalid={errs.name ? true : undefined}
           aria-describedby={errs.name ? "name-err" : undefined}
           value={vals.name}
-          onChange={(e) => setVals((v) => ({ ...v, name: e.target.value }))}
+          onChange={(e) => updateField("name", e.target.value)}
         />
       </Field>
       <Field id="email" label="Email" error={errs.email}>
@@ -99,7 +109,7 @@ export default function ContactForm() {
           aria-invalid={errs.email ? true : undefined}
           aria-describedby={errs.email ? "email-err" : undefined}
           value={vals.email}
-          onChange={(e) => setVals((v) => ({ ...v, email: e.target.value }))}
+          onChange={(e) => updateField("email", e.target.value)}
         />
       </Field>
       <Field id="message" label="Message" error={errs.message}>
@@ -111,7 +121,7 @@ export default function ContactForm() {
           aria-invalid={errs.message ? true : undefined}
           aria-describedby={errs.message ? "message-err" : undefined}
           value={vals.message}
-          onChange={(e) => setVals((v) => ({ ...v, message: e.target.value }))}
+          onChange={(e) => updateField("message", e.target.value)}
         />
       </Field>
       <button type="submit" className="btn btn-primary w-full" disabled={busy}>

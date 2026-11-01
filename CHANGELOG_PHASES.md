@@ -742,3 +742,36 @@ The complete `PUBLIC_ROUTES` set now contains:
 - `.gitignore` already covers `.coverage`, `__pycache__`, `.pyc`, and local database files.
 - Only deletions and this required changelog edit are expected in the worktree; no kept file path changed.
 - `python -m compileall app tests` and Git whitespace/status checks are the only validation commands permitted in this phase. Pytest, database, Docker, Alembic, npm, and frontend build checks were not run; CI should verify those flows and confirm Next.js has no missing module or asset reference.
+
+# Phase 5.6 PREDEPLOY-SESSION
+
+## Files changed
+
+- `.env.example` — documents blank super-admin settings (all four must be configured together), `SESSION_COOKIE_SECRET`, and `BACKEND_INTERNAL_URL`; no real credentials were added.
+- `.gitignore` — ignores `*.env` files in addition to `.env` and `.env.*`.
+- `ai-calling-frontend/src/lib/http.ts` — reads the `/api/session` response code and preserves it when an expired session redirects to login.
+- `ai-calling-frontend/src/components/LoginView.tsx` and `SignupView.tsx` — display the session-verification code below the unchanged error message. Login also restores a session error code passed through an auth redirect.
+- `ai-calling-frontend/src/components/ContactForm.tsx`, `ForgotPasswordView.tsx`, `forms.tsx`, and `talkaor-flow/PaymentView.tsx` — keep inline errors visible until the associated field is edited or a new submission starts.
+- `ai-calling-frontend/src/features/dashboard/store.tsx`, `ui.tsx`, and `dashboard.css` — error toasts remain visible for at least 8 seconds, pause on hover/focus, expose an alert role, and can be dismissed. Informational toasts retain their 2.5-second timeout.
+- `ai-calling-frontend/src/features/dashboard/appointments.tsx`, `shell.tsx`, `views-platform.tsx`, and `views-tenant.tsx` — identify error notifications to use the persistent error-toast behavior.
+- `CHANGELOG_PHASES.md` — records this change and the preceding ERRORMSG-PERSIST frontend work.
+
+## Seed behavior (unchanged)
+
+- `app/scripts/seed_super_admins.py` skips an existing account's password by default, while ensuring the account is protected, active, assigned the super-admin role, and email-verified.
+- `SUPERADMIN_SYNC_PASSWORDS=true` (or `--force-sync-passwords`) updates existing account password hashes to match the configured values and increments `auth_version`. The seed script requires all four super-admin email/password variables.
+
+## Secret and environment-file review
+
+- `.env`, `.env.*`, and `*.env` are ignored. `.env.example` remains the tracked template.
+- A redacted pattern scan covered 50 commits reachable from this branch and 603 unique historical blobs. It found no secret/password assignments in historical `.env`/`.env.local` snapshots and no occurrence of the local super-admin values in tracked files or history. Matches were runtime variables and test/example fixtures, not production credentials. This is a pattern-based check, not a guarantee against every possible secret format.
+
+## ERRORMSG-PERSIST behavior
+
+- Inline validation errors clear on editing their field; submission/server errors clear when a new submission starts. Input changes no longer erase login/signup submission errors.
+- Dashboard error toasts previously auto-dismissed after 2.5 seconds; they now last at least 8 seconds and pause while hovered or focused. Success/information toasts remain at 2.5 seconds.
+- Login/signup navigation continues only after successful authentication/registration. Session failures now display the response code (for example `BACKEND_URL_MISSING`) under the existing message.
+
+## Verification
+
+- No application, test, build, dependency-install, database, Docker, or migration commands were run locally. CI is responsible for tests and builds.

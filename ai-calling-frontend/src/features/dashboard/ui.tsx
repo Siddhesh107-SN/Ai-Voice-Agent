@@ -4,7 +4,7 @@ import { useDash } from './store';
 import { fmtDur, statusClass } from './util';
 
 export function ModalHost() {
-  const { modal, closeModal, toasts } = useDash();
+  const { modal, closeModal, toasts, dismissToast, pauseToast, resumeToast } = useDash();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!modal) return;
@@ -19,7 +19,33 @@ export function ModalHost() {
           <div className="md" role="dialog" aria-modal="true" tabIndex={-1} ref={ref}>{modal}</div>
         </div>
       )}
-      {toasts.map((t) => <div key={t.id} className="toast" role="status">{t.text}</div>)}
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className="toast"
+          role={t.kind === 'error' ? 'alert' : 'status'}
+          onMouseEnter={() => pauseToast(t.id)}
+          onMouseLeave={(event) => {
+            if (!event.currentTarget.contains(document.activeElement)) {
+              resumeToast(t.id);
+            }
+          }}
+          onFocusCapture={() => pauseToast(t.id)}
+          onBlurCapture={(event) => {
+            if (
+              !event.currentTarget.contains(event.relatedTarget as Node | null) &&
+              !event.currentTarget.matches(':hover')
+            ) {
+              resumeToast(t.id);
+            }
+          }}
+        >
+          <span>{t.text}</span>
+          {t.kind === 'error' && (
+            <button type="button" aria-label="Dismiss notification" onClick={() => dismissToast(t.id)}>×</button>
+          )}
+        </div>
+      ))}
     </>
   );
 }
@@ -48,7 +74,7 @@ export function CopyButton({ value, label = 'Copy' }: { value: string; label?: s
           await navigator.clipboard.writeText(value);
           toast('Copied to clipboard');
         } catch {
-          toast('Unable to copy to clipboard');
+          toast('Unable to copy to clipboard', 'error');
         }
       }}
     >
@@ -73,7 +99,7 @@ export function Player({ duration, url }: { duration: number; url?: string }) {
       audioRef.current.pause();
       setPlaying(false);
     } else {
-      audioRef.current.play().catch(() => toast('Playback error'));
+      audioRef.current.play().catch(() => toast('Playback error', 'error'));
       setPlaying(true);
     }
   };

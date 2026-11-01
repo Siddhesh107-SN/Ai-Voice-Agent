@@ -24,6 +24,25 @@ export class ApiError extends Error {
   }
 }
 
+async function sessionErrorCode(response: Response): Promise<string> {
+  const body: unknown = await response.json().catch(() => null);
+  if (
+    body &&
+    typeof body === 'object' &&
+    'code' in body &&
+    typeof body.code === 'string'
+  ) {
+    return body.code;
+  }
+  return 'SESSION_VERIFICATION_FAILED';
+}
+
+function redirectToLogin(errorCode: string): void {
+  if (typeof window !== 'undefined') {
+    window.location.href = `/login?expired=1&sessionErrorCode=${encodeURIComponent(errorCode)}`;
+  }
+}
+
 const STORAGE_KEYS = {
   ACCESS_TOKEN: 'tk_access_token',
   REFRESH_TOKEN: 'tk_refresh_token',
@@ -102,8 +121,9 @@ export async function setSessionCookies(
     body: JSON.stringify({ access_token: accessToken }),
   });
   if (!response.ok) {
+    const errorCode = await sessionErrorCode(response);
     await clearAuth();
-    throw new ApiError('Unable to verify the dashboard session.', response.status, 'SESSION_VERIFICATION_FAILED');
+    throw new ApiError('Unable to verify the dashboard session.', response.status, errorCode);
   }
 
   if (typeof window !== 'undefined') {
@@ -217,9 +237,6 @@ export async function http<T = any>(endpoint: string, options: RequestOptions = 
 
           if (!refreshRes.ok) {
             await clearAuth();
-            if (typeof window !== 'undefined') {
-              window.location.href = '/login?expired=1';
-            }
             const err = new ApiError('Session expired. Please log in again.', 401, 'TOKEN_EXPIRED');
             onRefreshFailed(err);
             throw err;
@@ -244,10 +261,11 @@ export async function http<T = any>(endpoint: string, options: RequestOptions = 
               body: JSON.stringify({ access_token: newAccessToken }),
             });
             if (!sessionRes.ok) {
+              const errorCode = await sessionErrorCode(sessionRes);
               throw new ApiError(
                 'Unable to verify the dashboard session.',
                 sessionRes.status,
-                'SESSION_VERIFICATION_FAILED',
+                errorCode,
               );
             }
           }
@@ -260,9 +278,7 @@ export async function http<T = any>(endpoint: string, options: RequestOptions = 
           isRefreshing = false;
           onRefreshFailed(err);
           await clearAuth();
-          if (typeof window !== 'undefined') {
-            window.location.href = '/login?expired=1';
-          }
+          redirectToLogin(err instanceof ApiError ? err.code : 'TOKEN_EXPIRED');
           throw err;
         }
       } else {
@@ -281,9 +297,7 @@ export async function http<T = any>(endpoint: string, options: RequestOptions = 
       }
     } else {
       await clearAuth();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login?expired=1';
-      }
+      redirectToLogin('TOKEN_EXPIRED');
     }
   }
 
