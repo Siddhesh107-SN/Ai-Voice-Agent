@@ -114,7 +114,7 @@ class AuthService:
         user = self.db.scalar(
             select(User)
             .where(User.email == normalized_email)
-            .with_for_update()
+            .with_for_update(of=User)
         )
         if user is None:
             return None

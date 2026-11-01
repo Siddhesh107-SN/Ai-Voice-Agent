@@ -111,7 +111,7 @@ class PasswordResetService:
         self, email: str, code: str, new_password: str, ip: str | None = None
     ) -> None:
         user = self.db.scalar(
-            select(User).where(User.email == email.lower()).with_for_update()
+            select(User).where(User.email == email.lower()).with_for_update(of=User)
         )
         now = datetime.now(timezone.utc)
         reset = None
