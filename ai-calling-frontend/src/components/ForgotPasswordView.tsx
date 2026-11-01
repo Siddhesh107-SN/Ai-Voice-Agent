@@ -83,7 +83,10 @@ export default function ForgotPasswordView() {
             autoComplete="email"
             required
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={(event) => {
+              setEmail(event.target.value);
+              setError('');
+            }}
             className="mt-1 w-full rounded-[10px] px-3 py-2 text-[13px] text-[var(--c-auth-ink)] outline-none"
             style={{ background: 'var(--c-auth-field-bg)', border: '1px solid var(--c-auth-line)' }}
           />
@@ -109,7 +112,10 @@ export default function ForgotPasswordView() {
               maxLength={6}
               required
               value={code}
-              onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
+              onChange={(event) => {
+                setCode(event.target.value.replace(/\D/g, ''));
+                setError('');
+              }}
               className="mt-1 w-full rounded-[10px] px-3 py-2 text-[13px] text-[var(--c-auth-ink)] outline-none"
               style={{ background: 'var(--c-auth-field-bg)', border: '1px solid var(--c-auth-line)' }}
             />
@@ -121,7 +127,10 @@ export default function ForgotPasswordView() {
               autoComplete="new-password"
               required
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setError('');
+              }}
               className="mt-1 w-full rounded-[10px] px-3 py-2 text-[13px] text-[var(--c-auth-ink)] outline-none"
               style={{ background: 'var(--c-auth-field-bg)', border: '1px solid var(--c-auth-line)' }}
             />
@@ -133,7 +142,10 @@ export default function ForgotPasswordView() {
               autoComplete="new-password"
               required
               value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
+              onChange={(event) => {
+                setConfirmation(event.target.value);
+                setError('');
+              }}
               className="mt-1 w-full rounded-[10px] px-3 py-2 text-[13px] text-[var(--c-auth-ink)] outline-none"
               style={{ background: 'var(--c-auth-field-bg)', border: '1px solid var(--c-auth-line)' }}
             />

@@ -87,7 +87,10 @@ export function PinDialog() {
         aria-label="4-digit PIN"
         value={v}
         autoFocus
-        onChange={(e) => setV(e.target.value.replace(/\D/g, ''))}
+        onChange={(e) => {
+          setV(e.target.value.replace(/\D/g, ''));
+          setMsg('');
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') go();
         }}
@@ -357,7 +360,7 @@ export function AgentsView() {
     : s.agents;
 
   const click = async (id: string) => {
-    if (!can) { toast('View only. Enter the admin PIN to change agents.'); return; }
+    if (!can) { toast('View only. Enter the admin PIN to change agents.', 'error'); return; }
     const a = list.find((x) => x.id === id)!;
     if (!a.online) {
       try {
@@ -365,7 +368,7 @@ export function AgentsView() {
         await reload();
         toast(`Turned ${a.name} on`);
       } catch (err: any) {
-        toast(err.message || 'Error toggling agent');
+        toast(err.message || 'Error toggling agent', 'error');
       }
       return;
     }
@@ -384,7 +387,7 @@ export function AgentsView() {
                   closeModal();
                   toast(`Turned ${a.name} off`);
                 } catch (err: any) {
-                  toast(err.message || 'Error toggling agent');
+                  toast(err.message || 'Error toggling agent', 'error');
                 }
               }}
             >
@@ -432,7 +435,7 @@ export function BusinessView() {
       await reload();
       toast('Business profile saved');
     } catch (err: any) {
-      toast(err.message || 'Error saving profile');
+      toast(err.message || 'Error saving profile', 'error');
     }
   };
 
@@ -498,7 +501,7 @@ export function AdminView() {
   const owner = s.role === 'admin';
   const update = async () => {
     const err = await changePin(cur, nx, cf);
-    if (err) toast(err);
+    if (err) toast(err, 'error');
     else {
       toast('PIN updated');
       setCur('');

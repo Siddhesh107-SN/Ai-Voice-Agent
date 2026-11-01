@@ -31,12 +31,12 @@ export function ApptForm({ id }: { id?: string }) {
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
-    if (!service.trim()) { toast('Enter the service to book'); return; }
+    if (!service.trim()) { toast('Enter the service to book', 'error'); return; }
     const existingCustomer = customers.find((x) => x.customer_id === cid);
     const c = existingCustomer || (isMockMode()
       ? { customer_id: cid, customer_name: 'Customer', customer_phone: '+91 90000 00000', customer_email: 'customer@mail.in' }
       : null);
-    if (!c) { toast('Select an existing customer before booking the appointment'); return; }
+    if (!c) { toast('Select an existing customer before booking the appointment', 'error'); return; }
     setBusy(true);
     try {
       if (cur) {
@@ -70,7 +70,7 @@ export function ApptForm({ id }: { id?: string }) {
       closeModal();
       toast('Appointment saved');
     } catch (err: any) {
-      toast(err.message || 'Error saving appointment');
+      toast(err.message || 'Error saving appointment', 'error');
     } finally {
       setBusy(false);
     }
@@ -103,7 +103,7 @@ function RescheduleForm({ a }: { a: Appointment }) {
       closeModal();
       toast('Appointment rescheduled');
     } catch (err: any) {
-      toast(err.message || 'Error rescheduling');
+      toast(err.message || 'Error rescheduling', 'error');
     } finally {
       setBusy(false);
     }
@@ -132,7 +132,7 @@ function CancelForm({ a }: { a: Appointment }) {
       closeModal();
       toast('Appointment cancelled');
     } catch (err: any) {
-      toast(err.message || 'Error cancelling');
+      toast(err.message || 'Error cancelling', 'error');
     } finally {
       setBusy(false);
     }

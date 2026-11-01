@@ -103,7 +103,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       }
       if (s.role === 'staff' && s.elevated && idleFor >= STAFF_ADMIN_IDLE_MS) {
         set((prev) => ({ ...prev, elevated: false }));
-        toast('Admin session expired due to inactivity');
+        toast('Admin session expired due to inactivity', 'error');
       }
       if (idleFor >= IDLE_WARNING_MS && !idleWarningOpenRef.current) {
         idleWarningOpenRef.current = true;

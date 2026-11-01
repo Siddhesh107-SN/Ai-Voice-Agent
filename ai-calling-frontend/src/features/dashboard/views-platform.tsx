@@ -74,7 +74,7 @@ export function AccessControl() {
       await reload();
       toast(`Access granted to ${r.business}`);
     } catch (err: any) {
-      toast(err.message || 'Error granting access');
+      toast(err.message || 'Error granting access', 'error');
     }
   };
 
@@ -86,7 +86,7 @@ export function AccessControl() {
       await reload();
       toast(`Access declined for ${r.business}`);
     } catch (err: any) {
-      toast(err.message || 'Error declining access');
+      toast(err.message || 'Error declining access', 'error');
     }
   };
 
@@ -99,7 +99,7 @@ export function AccessControl() {
       await reload();
       toast(`${b.name} ${st === 'Active' ? 'reactivated' : 'suspended'}`);
     } catch (err: any) {
-      toast(err.message || 'Error updating status');
+      toast(err.message || 'Error updating status', 'error');
     }
   };
 
@@ -133,7 +133,7 @@ function PinChange({ id }: { id: string }) {
 
   const save = async () => {
     if (!/^\d{4}$/.test(v)) {
-      toast('PIN must be 4 digits');
+      toast('PIN must be 4 digits', 'error');
       return;
     }
     setBusy(true);
@@ -143,7 +143,7 @@ function PinChange({ id }: { id: string }) {
       closeModal();
       toast('PIN changed and logged to audit trail');
     } catch (err: any) {
-      toast(err.message || 'Error resetting PIN');
+      toast(err.message || 'Error resetting PIN', 'error');
     } finally {
       setBusy(false);
     }
@@ -165,7 +165,7 @@ export function BusinessesPlans() {
       await reload();
       toast(`100-minute pack added for ${name}`);
     } catch (err: any) {
-      toast(err.message || 'Error adding minute pack');
+      toast(err.message || 'Error adding minute pack', 'error');
     }
   };
 
@@ -235,7 +235,7 @@ export function FleetView() {
       await refreshAgents();
       toast(`Turned ${a.name} ${!a.online ? 'on' : 'off'}`);
     } catch (err: any) {
-      toast(err.message || 'Error toggling agent power');
+      toast(err.message || 'Error toggling agent power', 'error');
     }
   };
 
@@ -334,17 +334,17 @@ function AgentLinkDialog({ businesses, agent, onSaved }: { businesses: { id: str
       title={agent ? `Edit ${agent.name}` : 'Link a Sarvam agent'}
       actions={<><button onClick={closeModal}>Cancel</button><button className="pri" disabled={busy} onClick={save}>{busy ? 'Saving…' : agent ? 'Save changes' : 'Link agent'}</button></>}
     >
-      {!agent && <label>Client<select value={clientId} onChange={(event) => setClientId(event.target.value)} required>
+      {!agent && <label>Client<select value={clientId} onChange={(event) => { setClientId(event.target.value); setError(''); }} required>
         {businesses.map((business) => <option key={business.id} value={business.id}>{business.name}</option>)}
       </select></label>}
-      <label>Agent name<input maxLength={150} value={name} onChange={(event) => setName(event.target.value)} required /></label>
+      <label>Agent name<input maxLength={150} value={name} onChange={(event) => { setName(event.target.value); setError(''); }} required /></label>
       <label>Provider<input value="Sarvam" readOnly /></label>
-      <label>Provider agent ID<input maxLength={255} value={providerAgentId} onChange={(event) => setProviderAgentId(event.target.value)} required /></label>
+      <label>Provider agent ID<input maxLength={255} value={providerAgentId} onChange={(event) => { setProviderAgentId(event.target.value); setError(''); }} required /></label>
       <label>Phone number (E.164)
         <input
           type="tel"
           value={phone}
-          onChange={(event) => setPhone(event.target.value)}
+          onChange={(event) => { setPhone(event.target.value); setError(''); }}
           onBlur={() => setPhoneTouched(true)}
           placeholder="+919876543210"
           aria-invalid={phoneTouched && !phoneValid}
@@ -585,7 +585,7 @@ export function MessagesInbox() {
       await updateContactMessage(id, patch);
       await reload();
     } catch (err: any) {
-      toast(err.message || 'Error updating message');
+      toast(err.message || 'Error updating message', 'error');
     }
   };
 
