@@ -333,10 +333,13 @@ def test_client_tool_tokens_are_scoped_rotated_and_never_logged(client, db, capl
 def test_legacy_shared_token_flag_logs_without_token_and_can_be_disabled(
     client, db, caplog, monkeypatch,
 ):
+    from app.services import tool_call_log_service
+
     tenant = _client(client, "agentlink-legacy@example.com", "Legacy Client")
     token = get_settings().sarvam_webhook_secret
     assert token
     caplog.set_level("WARNING")
+    monkeypatch.setattr(tool_call_log_service, "_last_legacy_token_log", float("-inf"))
     before = db.scalar(select(AuditLog.id).order_by(AuditLog.id.desc()))
 
     accepted = _tool_call(client, tenant["id"], token, "+919876543206")
