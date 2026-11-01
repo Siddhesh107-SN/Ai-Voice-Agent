@@ -508,6 +508,7 @@ export function AdminView() {
             </>}
           </div>
           <div className="card"><h3>Audit log</h3><div className="tl" style={{ marginTop: 10 }}>{s.logs.slice(0, 5).map((l, i) => <div key={i}>{l.text}<br /><small className="mut">{l.at}</small></div>)}</div></div>
+        </div>
       </div>
     </>
   );
