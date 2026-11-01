@@ -49,6 +49,7 @@ JWT_SECRET_KEY=<random-secret-at-least-32-characters>
 PIN_ENCRYPTION_KEY=<valid-Fernet-key-from-the-secret-manager>
 CORS_ORIGINS=https://<frontend-domain>
 RATE_LIMIT_ENABLED=true
+TRUSTED_PROXY_COUNT=1
 DOCS_ENABLED=false
 PUBLIC_API_BASE_URL=https://<api-domain>
 DEFAULT_TIMEZONE=<IANA-timezone>
@@ -56,6 +57,9 @@ EMAIL_BACKEND=resend
 RESEND_API_KEY=<Resend-secret-from-the-secret-manager>
 MAIL_FROM=Talkaor <no-reply@<verified-domain>>
 REQUIRE_EMAIL_VERIFICATION=true
+SARVAM_WEBHOOK_SECRET=<random-secret-from-the-secret-manager>
+SARVAM_LEGACY_SHARED_TOKEN_ENABLED=false
+OVERAGE_GRACE_PERCENT=10
 ```
 
 `APP_ENV=production` requires `DEBUG=false`, validates that `JWT_SECRET_KEY`
@@ -70,6 +74,84 @@ staggered client migration; set `SARVAM_LEGACY_SHARED_TOKEN_ENABLED=false`
 only after every client has completed the cutover below. For email delivery,
 use either a configured Resend backend or SMTP (`SMTP_HOST`, `SMTP_PORT`,
 `SMTP_USER`, `SMTP_PASSWORD`, and `EMAIL_FROM` as required by the server).
+
+Generate high-entropy secrets with a trusted local Python installation and
+transfer them directly into the secret manager (do not put them in shell
+history, Git, or deployment logs):
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+For `PIN_ENCRYPTION_KEY`, generate a Fernet-compatible key instead:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+### Production pre-flight checklist
+
+Review these values before starting the backend/frontend. The app does not
+validate every URL or provider integration at startup, so a process can start
+while a deployment is still unusable.
+
+| Setting | Required value / safe example | If missing or wrong |
+|---|---|---|
+| `APP_ENV` | `production` | Defaults to development if omitted; production protections/validation and production docs behavior may not apply. |
+| `DEBUG` | `false` | `true` with production `APP_ENV` fails backend settings validation and prevents app startup. |
+| `DATABASE_URL` | Valid PostgreSQL URL from the secret manager | Database startup/queries and health checks fail; ensure URL-encode special characters in credentials. |
+| `JWT_SECRET_KEY` | Unique random secret, at least 32 characters; generate with the `secrets.token_urlsafe(48)` example above | Weak/default secret under production fails settings validation/startup; changing it invalidates issued JWTs. |
+| `PIN_ENCRYPTION_KEY` | Valid Fernet key; use the Fernet generator above | Missing key fails production settings validation/startup; malformed key can make PIN operations fail. Rotating it requires re-encryption or PIN resets. |
+| `SESSION_COOKIE_SECRET` (frontend) | Random high-entropy value of at least 32 bytes, same on every frontend instance | Missing/short secret makes the Next.js session route return 503 when login/signup tries to create the dashboard session. |
+| `BACKEND_INTERNAL_URL` | Backend-reachable URL, e.g. `http://127.0.0.1:8000` on a shared host | If absent, the frontend falls back to `NEXT_PUBLIC_API_URL`; if both are missing/unreachable, session verification fails and dashboard login cannot complete. |
+| `EMAIL_BACKEND` | `resend` or `smtp` | `console` warns in production and does not send mail; email verification/password reset return 503 when delivery is unavailable. |
+| Email credentials | Resend requires `RESEND_API_KEY` and `MAIL_FROM`; SMTP requires `SMTP_HOST`, `EMAIL_FROM`, and any server-required `SMTP_USER`/`SMTP_PASSWORD` | Missing sender/host/key prevents delivery configuration; SMTP auth/network errors prevent email delivery. |
+| `CORS_ORIGINS` | Exact browser origin(s), e.g. `https://<frontend-domain>` | Wrong/missing origin does not stop app startup but browser API requests fail CORS checks. Avoid wildcards with credentialed requests. |
+| `PUBLIC_API_BASE_URL` | Public HTTPS API origin, e.g. `https://<api-domain>` | App can start, but generated Sarvam URLs may be relative and integration setup warns; provider callbacks may not reach the API. |
+| Frontend base URL for reset email | Public frontend origin, e.g. `https://<frontend-domain>` | **No backend setting currently generates a reset URL.** Reset mail contains a one-time code only; users must open the deployed frontend's `/forgot-password` page and enter it. There is no `FRONTEND_BASE_URL` variable consumed by the application today. |
+| `SARVAM_WEBHOOK_SECRET` | Secret-manager value matching the configured legacy signed webhook/shared outbound integration | App can start, but signed `/api/v1/webhooks/sarvam` requests and shared-token outbound requests fail authentication without the matching secret. Per-client token routes are separate. |
+| `SARVAM_LEGACY_SHARED_TOKEN_ENABLED` | `false` after all clients and outbound callbacks are cut over; transitional default is `true` | `true` leaves compatibility enabled and emits a production startup warning; setting false too early rejects callers still using the shared token. |
+| `RATE_LIMIT_ENABLED` | `true` | `false` disables SlowAPI rate limits; app still starts but public endpoints lose this protection. |
+| `TRUSTED_PROXY_COUNT` | Exact number of trusted forwarding proxies; `1` for a single Nginx proxy immediately before the app | Default `0` preserves the existing `request.client.host` key behavior. Uvicorn's proxy-header middleware can rewrite that ASGI peer value when its immediate peer is trusted, so use a positive count with the configured proxy chain to select from raw `X-Forwarded-For`. An incorrect count can group callers under a proxy IP or trust an attacker-controlled entry; setting it above the actual trusted chain lets callers spoof their rate-limit IP. Restrict direct backend access to the trusted proxy. |
+| `OVERAGE_GRACE_PERCENT` | Intended billing grace percentage, normally `10` | App can start with an incorrect value; call-start gating may block billable calls too early or allow calls beyond the intended allowance. |
+
+### Nginx forwarded client IP
+
+For a single Nginx reverse proxy on the EC2 host, forward the connection
+peer address and append it to any incoming forwarding chain. Do **not** use
+the raw leftmost `X-Forwarded-For` value as the client's identity: external
+callers can send that header themselves.
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Set `TRUSTED_PROXY_COUNT=1` only when this Nginx instance is the only trusted
+proxy between the caller and the app. The limiter selects the address at
+`X-Forwarded-For` position `proxy_count` from the right, so a single Nginx
+uses the rightmost appended peer address. For a multi-proxy chain, count the
+trusted proxy hops and ensure each proxy appends its observed peer address.
+Setting the count above the actual number of trusted proxies can select a
+caller-forged value and let callers evade per-IP rate limits. Keep Gunicorn/
+Uvicorn inaccessible directly from untrusted networks; only Nginx should be
+able to connect to the backend port.
+
+The current limiter's zero-count behavior remains `slowapi`'s
+`get_remote_address`, which reads `request.client.host`. The configured
+`UvicornWorker` has proxy-header handling enabled by default, with no explicit
+`forwarded_allow_ips` override in this repository. Therefore, when Nginx
+connects over a trusted loopback address, Uvicorn may already rewrite the
+ASGI peer address from the leftmost forwarded value. `TRUSTED_PROXY_COUNT=0`
+does not disable that Uvicorn behavior or necessarily mean the kernel-level
+socket peer. Set the count to the actual proxy count and use the Nginx
+append-header configuration above to make the limiter select the intended
+client from the unmodified header chain.
 
 Frontend environment:
 

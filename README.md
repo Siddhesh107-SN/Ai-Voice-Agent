@@ -17,6 +17,12 @@ backend at the root and a Next.js frontend in `ai-calling-frontend/`.
   Configure `SESSION_COOKIE_SECRET` with at least 32 random bytes; all frontend
   instances must share the same stable value. Super-admin initial loads use
   platform endpoints only and skip tenant-scoped polling.
+- **Rate limiting:** By default, limits use the ASGI request peer address
+  (`request.client.host`), preserving existing behavior. When deployed behind
+  a trusted reverse proxy, set backend `TRUSTED_PROXY_COUNT` to the exact
+  proxy count so the limiter selects from the right side of the forwarded-IP
+  chain; see the [deployment runbook](./docs/DEPLOY_RUNBOOK.md) for Nginx
+  configuration and the proxy-header trust warning.
 - **Database:** Alembic migrations are in `alembic/versions/`. Keep application
   and migration changes coordinated; back up the production database before
   applying migrations.

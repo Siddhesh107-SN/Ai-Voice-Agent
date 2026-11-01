@@ -1,7 +1,7 @@
 """Application settings loaded from environment variables / .env."""
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     default_timezone: str = "Asia/Kolkata"
     cors_origins: str = ""
     rate_limit_enabled: bool = True
+    trusted_proxy_count: int = Field(default=0, ge=0)
 
     upload_dir: str = "uploads"
 
