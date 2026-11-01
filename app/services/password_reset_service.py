@@ -8,7 +8,6 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.database import SessionLocal
 from app.core.exceptions import AppError
 from app.core.security import hash_password
 from app.models.password_reset_code import PasswordResetCode
@@ -45,13 +44,10 @@ class PasswordResetService:
         self.db = db
         self.email = EmailService()
 
-    def request_code(self, email: str, ip: str | None = None) -> tuple[int, str, str] | None:
+    def create_code_for_user(
+        self, user: User, ip: str | None = None
+    ) -> tuple[int, str, str] | None:
         self.email.ensure_password_reset_delivery_configured()
-        user = self.db.scalar(
-            select(User).where(User.email == email.lower()).with_for_update()
-        )
-        if user is None or user.is_protected or not user.is_active:
-            return None
 
         now = datetime.now(timezone.utc)
         recent_codes = self.db.scalars(
@@ -161,11 +157,3 @@ class PasswordResetService:
             level="info",
         )
         self.db.commit()
-
-
-def process_password_reset_request(email: str, ip: str | None) -> None:
-    with SessionLocal() as db:
-        service = PasswordResetService(db)
-        pending = service.request_code(email, ip)
-        if pending:
-            service.deliver_code(*pending)

@@ -1,19 +1,16 @@
-from fastapi import APIRouter, BackgroundTasks, Request, Response, status
+from fastapi import APIRouter, Request, Response, status
 
 from app.core.dependencies import CurrentUser, DbSession
 from app.core.exceptions import ServiceUnavailableError
 from app.core.rate_limit import LOGIN_LIMIT, REFRESH_LIMIT, REGISTER_LIMIT, limiter
-from app.services.email_service import EmailConfigurationError, EmailService
+from app.services.email_service import EmailConfigurationError
 from app.schemas.auth import (AuthData, ChangePasswordRequest, ForgotPasswordRequest,
                               LoginRequest, LogoutRequest, RefreshRequest, ResetPasswordRequest,
                               RegisterRequest, TokenPair)
 from app.schemas.common import ApiResponse
 from app.schemas.user import UserOut
 from app.services.auth_service import AuthService
-from app.services.password_reset_service import (
-    PasswordResetService,
-    process_password_reset_request,
-)
+from app.services.password_reset_service import PasswordResetService
 
 router = APIRouter()
 
@@ -72,22 +69,19 @@ def change_password(request: Request, body: ChangePasswordRequest, user: Current
 @limiter.limit(LOGIN_LIMIT)
 def forgot_password(
     request: Request,
-    background_tasks: BackgroundTasks,
     body: ForgotPasswordRequest,
+    db: DbSession,
 ):
     """Request a one-time email code without revealing whether an account is eligible."""
     try:
-        EmailService().ensure_password_reset_delivery_configured()
+        pending = AuthService(db).forgot_password(body.email, _ip(request))
     except EmailConfigurationError as exc:
         raise ServiceUnavailableError(
             "Password reset email is temporarily unavailable",
             error_code="EMAIL_DELIVERY_UNAVAILABLE",
         ) from exc
-    background_tasks.add_task(
-        process_password_reset_request,
-        body.email,
-        _ip(request),
-    )
+    if pending:
+        PasswordResetService(db).deliver_code(*pending)
     return ApiResponse(
         message="If this email is eligible, password-reset instructions have been sent.",
         data={"status": "sent"},

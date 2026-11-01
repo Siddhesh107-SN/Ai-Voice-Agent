@@ -2,6 +2,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -18,6 +19,7 @@ from app.repositories.user_repository import UserRepository
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenPair
 from app.services.audit_service import record_audit
 from app.services.client_service import provision_client
+from app.services.password_reset_service import PasswordResetService
 from app.services.protection_service import assert_user_not_protected
 from app.services.transactions import commit_or_conflict
 
@@ -104,6 +106,24 @@ class AuthService:
         tokens = issue_tokens(user, self.db, ip=ip, user_agent=user_agent)
         self.db.commit()
         return user, tokens
+
+    def forgot_password(
+        self, email: str, ip: str | None = None
+    ) -> tuple[int, str, str] | None:
+        normalized_email = email.strip().lower()
+        user = self.db.scalar(
+            select(User)
+            .where(User.email == normalized_email)
+            .with_for_update()
+        )
+        if user is None:
+            return None
+
+        assert_user_not_protected(user, "forgot_password", db=self.db, ip=ip)
+        if not user.is_active:
+            return None
+
+        return PasswordResetService(self.db).create_code_for_user(user, ip)
 
     def refresh(self, refresh_token: str, ip: str | None = None,
                 user_agent: str | None = None) -> TokenPair:

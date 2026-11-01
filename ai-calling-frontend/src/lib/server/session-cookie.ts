@@ -33,7 +33,7 @@ function decodeBase64Url(value: string): Uint8Array {
 async function hmacKey(): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     'raw',
-    encoder.encode(sessionSecret()),
+    new Uint8Array(encoder.encode(sessionSecret())),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign', 'verify'],
@@ -43,13 +43,18 @@ async function hmacKey(): Promise<CryptoKey> {
 async function sign(payload: string): Promise<Uint8Array> {
   const key = await hmacKey();
   return new Uint8Array(
-    await crypto.subtle.sign('HMAC', key, encoder.encode(payload)),
+    await crypto.subtle.sign('HMAC', key, new Uint8Array(encoder.encode(payload))),
   );
 }
 
 async function verify(payload: string, supplied: Uint8Array): Promise<boolean> {
   const key = await hmacKey();
-  return crypto.subtle.verify('HMAC', key, supplied, encoder.encode(payload));
+  return crypto.subtle.verify(
+    'HMAC',
+    key,
+    new Uint8Array(supplied),
+    new Uint8Array(encoder.encode(payload)),
+  );
 }
 
 export async function signServerSession(session: ServerSession): Promise<string> {
@@ -71,7 +76,7 @@ export async function verifyServerSession(value: string | undefined): Promise<Se
     }
 
     const session = JSON.parse(
-      new TextDecoder().decode(decodeBase64Url(payload)),
+      new TextDecoder().decode(new Uint8Array(decodeBase64Url(payload))),
     ) as ServerSession;
     if (
       typeof session.id !== 'string' ||
