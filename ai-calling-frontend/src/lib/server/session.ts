@@ -18,7 +18,7 @@ export async function getCurrentUser(): Promise<ServerUser> {
   return {
     id: role === 'super_admin' ? 'super_admin' : role === 'staff' ? 'staff_user' : 'admin_user',
     name: role === 'super_admin' ? 'Platform Super Admin' : role === 'staff' ? 'Staff Member' : 'Admin User',
-    email: role === 'super_admin' ? 'admin@talkaor.com' : 'user@talkaor.com',
+    email: '',
     role,
     business_id: 'client_active',
   };

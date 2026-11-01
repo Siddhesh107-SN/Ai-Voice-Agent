@@ -10,7 +10,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const user = await getCurrentUser();
   const simulate =
     process.env.NODE_ENV !== 'production' &&
-    process.env.NEXT_PUBLIC_DASH_SIMULATE === '1';
+    process.env.NEXT_PUBLIC_API_MODE === 'mock';
 
   return (
     <DashboardProvider
@@ -20,7 +20,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         name: user.name,
         email: user.email,
         role: user.role,
-        businessName: user.business_id === 'b1' ? 'Sunrise Dental Care' : 'Your Business',
+        businessName: 'Your Business',
       }}
       simulate={simulate}
     >

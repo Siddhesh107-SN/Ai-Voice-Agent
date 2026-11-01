@@ -531,3 +531,49 @@ The complete `PUBLIC_ROUTES` set now contains:
 - Tests added or extended: `test_admin_agent_list_includes_link_fields_and_client_token_presence`, `test_billing_me_success_and_alerts`, `test_billing_pause_fields_are_scoped_to_the_signed_in_tenant`, and `test_monitoring_adds_blocked_call_and_legacy_token_aggregates`.
 - Verification: Python AST parsing passed for all eight modified Python files; `git diff --check` passed. Pytest, database commands, npm install, and frontend build were not run as requested; build and tests remain for CI.
 - The Sarvam console steps are documented with placeholders only. Exact console controls, secret-reference syntax, and response-to-variable mapping depend on Sarvam behavior that this repository cannot verify.
+
+## Phase 4C DEMOCLEAN
+
+### CHANGE REPORT
+
+1. Branch: `phase-2`; base commit: `9bb9fe128a1e8738a830b7989f55c509fc39db62`. The new commit hash is in the delivery summary because this changelog entry is part of that commit.
+2. Demo surface inventory:
+   - `ai-calling-frontend/src/middleware.ts:10-27` — previously accepted `?role=` and `NEXT_PUBLIC_DASH_SIMULATE` to select/bypass roles. Removed both; live dashboard role routing now uses the auth-set role cookie, and mock mode alone bypasses login for previews.
+   - `ai-calling-frontend/src/lib/http.ts:67-105` — the authenticated user role was persisted inside `tk_user` in localStorage. `getUserRole()` now reads the auth-set role cookie, and login clears the old localStorage value so localStorage cannot switch the live UI/API role.
+   - `ai-calling-frontend/src/app/dashboard/layout.tsx:11-14` — previously used `NEXT_PUBLIC_DASH_SIMULATE` to suppress appointment polling. It now follows `NEXT_PUBLIC_API_MODE=mock`.
+   - `ai-calling-frontend/src/features/dashboard/shell.tsx:16-18, 174-202, 294, 327-337` — role selectors and fixture identities remain available only in mock mode; client roles get a compact assigned-number block in either mode. The online indicator, exact-number copy, extra-number link, and unassigned/error states are live-safe.
+   - `ai-calling-frontend/src/features/dashboard/views-tenant.tsx:137, 261` — mock billing-state selector remains mock-only; fake Call/WhatsApp toast buttons are now mock-only and are absent in live mode.
+   - `ai-calling-frontend/src/features/dashboard/views-tenant.tsx:165-214` — dashboard previously displayed fixed `342` calls, `128` customers, and a hardcoded weekly chart. Live mode now derives counts from loaded records and does not render the mock chart.
+   - `ai-calling-frontend/src/features/dashboard/views-platform.tsx:33-60` — platform revenue history used hardcoded monthly values; those are now mock-only, and live mode shows no invented history.
+   - `ai-calling-frontend/src/features/dashboard/appointments.tsx:34-40` — the fabricated customer contact fallback is now used only in mock mode; live booking requires an existing customer.
+   - `ai-calling-frontend/src/components/talkaor-flow/PaymentView.tsx:82` — the `test@talkaor.com` fallback was removed; it was not displayed, but could be passed as payment state.
+   - `ai-calling-frontend/src/lib/server/session.ts:18-22` and `src/features/dashboard/store.tsx:99-108` — sample profile emails/names were removed from the live fallback state.
+   - `ai-calling-frontend/src/features/dashboard/mock.ts:16, 85, 135-176` — sample dashboard, webhook, and tool-call records remain mock fixtures; adapters load them only when mock mode is enabled. They are not live-request fallbacks.
+   - `ai-calling-frontend/src/components/TryIt.tsx:7-56`, `src/data/scenes.ts:97,124`, `src/app/(marketing)/page.tsx:7,22` — the public interactive product demo and its sample scenarios are visible in live marketing mode and are intentionally retained; they do not sign in or link to a demo dashboard.
+   - `ai-calling-frontend/src/components/WhoFor.tsx:89-93` and `src/app/globals.css:266-267` — the marketing `demo-line` animation is visible live but is only a styling class, not demo data or a role control.
+   - `ai-calling-frontend/src/app/onboarding-status/preview/page.tsx:7-104` and `src/components/onboarding-status/StatusView.tsx:123` — sample status scenarios are dev-preview-only; the preview route returns not-found in production.
+   - `ai-calling-frontend/src/components/AuthForm.tsx:6,24` — legacy form includes a demo success message but has no imports/usages in the app, so it is not visible in login/signup or live routes.
+   - `ai-calling-frontend/.env.example:11-12` — legacy `NEXT_PUBLIC_DASH_SIMULATE` entry is retained but marked ignored. The live LoginView and SignupView have no sample credentials, demo-account shortcuts, or demo links; no demo password was found.
+3. Files changed:
+   - `.env.example` — marked `NEXT_PUBLIC_DASH_SIMULATE` as ignored and documented mock mode as the preview switch.
+   - `src/app/dashboard/layout.tsx` — ties appointment polling simulation to mock mode and uses a generic business label.
+   - `src/middleware.ts` — removes query-role selection and the development simulation bypass.
+   - `src/features/dashboard/shell.tsx` — mock-gates both role selectors; adds the compact client phone/status/copy block and visible dashboard-load error/retry.
+   - `src/features/dashboard/store.tsx` — prevents role mutation outside mock mode and exposes initial/polling data failures instead of silently hiding them.
+   - `src/features/dashboard/api.ts` — lets a failed business-data request reach the dashboard error state instead of converting it to a successful empty fallback.
+   - `src/features/dashboard/views-tenant.tsx` — hides fake customer actions outside mock mode, removes sample-name fallback and fixed live metrics, and suppresses the mock weekly chart in live mode.
+   - `src/features/dashboard/views-platform.tsx` — hides invented historical revenue values outside mock mode.
+   - `src/features/dashboard/appointments.tsx` — limits fake customer contact data to mock mode.
+   - `src/lib/server/session.ts` — removes a hardcoded sample email from the dashboard profile.
+   - `src/lib/http.ts` — removes persisted role data from localStorage and sources `getUserRole()` from the auth-set cookie.
+   - `src/components/talkaor-flow/PaymentView.tsx` — removes the fallback test email.
+   - `CHANGELOG_PHASES.md` — records this phase and its demo-surface inventory.
+   - No files were created or deleted.
+4. Database/API changes: none. No backend file changed. No dependencies were added. Failed live dashboard loads now show an error and retry control; live failures do not fall back to mock data. The live call response/model has no call timestamp for a truthful weekly calls chart, so live mode explains that gap instead of drawing fixture data.
+5. No runtime environment variables were added or changed. `NEXT_PUBLIC_DASH_SIMULATE` is no longer read by source code; it remains in `.env.example` only as a documented ignored legacy entry. `NEXT_PUBLIC_API_MODE=mock` remains the mock switch. The frontend does not persist role or phone data in localStorage/sessionStorage; the existing authenticated role cookie remains the role source.
+6. Behavior:
+   - Live super admin: no role-switching control; the existing platform role label and route/API guards remain.
+   - Live client admin/staff: no role switcher; shell shows the first assigned phone number, readable formatting, exact E.164 copy, online/offline state, and `+N more` when applicable. Missing numbers show the assignment hint; failed loads show an error instead.
+   - Mock mode: role switchers and fixture data remain; client admin/staff also see the number block. Fake customer action toasts and billing preview remain mock-only.
+7. Verification: no build, npm, or tests were run as requested. `git diff --check` passed.
+8. Manual checks: in live mode, sign in as each role; confirm no role selector, verify each client’s number/copy/status/more link or unassigned hint, try `?role=super_admin` and confirm it does not change role, and open a platform URL as a client to confirm redirect/denial. Simulate an API failure and confirm the error/retry state appears without fixtures. In mock mode (`NEXT_PUBLIC_API_MODE=mock`), verify the switcher remains usable for each role, client number block appears, and `NEXT_PUBLIC_DASH_SIMULATE` has no effect. No backend behavior or API endpoints were changed. The existing Next.js route guard still relies on the client-readable `tk_role` cookie set after authentication; backend APIs remain authoritative. A server-verified/HttpOnly session would require auth/backend work outside this frontend-only scope.

@@ -221,7 +221,7 @@ export async function fetchInitialDashboardData(): Promise<MockData> {
     ? http<any[]>('/api/v1/admin/agents')
     : http<any[]>('/api/v1/agents');
   const callsPromise = http<any[]>('/api/v1/calls');
-  const bizPromise = http<any>('/api/v1/business').catch(() => null);
+  const bizPromise = http<any>('/api/v1/business');
 
   // Super admin exclusive endpoints
   const businessesPromise = isSuperAdmin

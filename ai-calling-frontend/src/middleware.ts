@@ -9,28 +9,16 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Determine user role and status from cookies / query in dev
+  // The role cookie is set from the authenticated user response.
   const roleCookie = request.cookies.get('tk_role')?.value;
   const userCookie = request.cookies.get('tk_session_user')?.value;
+  const mockMode =
+    process.env.NODE_ENV !== 'production' &&
+    process.env.NEXT_PUBLIC_API_MODE === 'mock';
+  const currentRole = roleCookie;
 
-  const isDev = process.env.NODE_ENV !== 'production';
-  const devSimulate = isDev && process.env.NEXT_PUBLIC_DASH_SIMULATE === '1';
-
-  // In simulate mode strictly during development, URL query ?role=... or cookie can switch role
-  const urlRole = isDev ? request.nextUrl.searchParams.get('role') : null;
-  let currentRole = urlRole || roleCookie;
-
-  if (!currentRole && devSimulate) {
-    // If opening platform directly in simulate mode, allow super_admin
-    if (pathname.startsWith('/dashboard/platform')) {
-      currentRole = 'super_admin';
-    } else {
-      currentRole = 'admin';
-    }
-  }
-
-  // If unauthenticated and not in dev simulation mode, redirect to login
-  if (!userCookie && !devSimulate) {
+  // Mock previews do not require a live login; production always requires the session cookie.
+  if (!userCookie && !mockMode) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 

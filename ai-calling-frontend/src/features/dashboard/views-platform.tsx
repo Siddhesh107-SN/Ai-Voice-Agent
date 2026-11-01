@@ -21,6 +21,7 @@ import {
   resetBusinessPin,
   toggleAgentPower,
   updateContactMessage,
+  isMockMode,
   type AdminAgentInput,
 } from './api';
 
@@ -30,7 +31,9 @@ export function PlatformOverview() {
   const { s } = useDash();
   const act = s.businesses.filter((b) => b.status === 'Active');
   const mrr = act.reduce((t, b) => t + PLAN_PRICE[b.plan], 0);
-  const M = [8.2, 9.6, 11.1, 12.4, 14, mrr / 1000], mx = Math.max(...M);
+  const mockMode = isMockMode();
+  const M = mockMode ? [8.2, 9.6, 11.1, 12.4, 14, mrr / 1000] : [mrr / 1000];
+  const mx = Math.max(...M);
   const kp = [
     { t: 'Active businesses', v: String(act.length), n: `${s.businesses.length - act.length} suspended`, k: 'k2' },
     { t: 'Monthly revenue', v: inr(mrr), n: 'Active plans only', k: 'k1' },
@@ -51,8 +54,10 @@ export function PlatformOverview() {
                 <td><span className={`st ${b.status === 'Active' ? 'completed' : 'cancelled'}`}>{b.status}</span></td></tr>
             ))}</tbody></table>
         </div>
-        <div className="card"><h3>Revenue, 6 months (₹ thousand)</h3>
-          <div className="bars">{M.map((v, i) => <div key={i} style={{ flexDirection: 'column', alignItems: 'stretch' }}><div style={{ flex: 1 }}><i style={{ height: `${(v / mx) * 100}%`, background: '#F26B2A' }} /></div><span>{['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'][i]}</span></div>)}</div>
+        <div className="card"><h3>{mockMode ? 'Revenue, 6 months (₹ thousand)' : 'Revenue'}</h3>
+          {mockMode
+            ? <div className="bars">{M.map((v, i) => <div key={i} style={{ flexDirection: 'column', alignItems: 'stretch' }}><div style={{ flex: 1 }}><i style={{ height: `${(v / mx) * 100}%`, background: '#F26B2A' }} /></div><span>{['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'][i]}</span></div>)}</div>
+            : <p className="mut">Historical revenue data is unavailable.</p>}
         </div>
       </div>
     </>

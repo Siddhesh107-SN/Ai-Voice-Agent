@@ -11,6 +11,7 @@ import {
   rescheduleAppointment,
   cancelAppointment,
   fetchAppointmentHistory,
+  isMockMode,
 } from './api';
 
 const PANEL = ['linear-gradient(135deg,#285CCC,#0F1F4A)', 'linear-gradient(135deg,#F26B2A,#a63a0f)', 'linear-gradient(135deg,#2f9e75,#12503a)', 'linear-gradient(135deg,#7a5cd6,#2d1f6b)', 'linear-gradient(135deg,#d6486b,#6b1f33)'];
@@ -31,7 +32,11 @@ export function ApptForm({ id }: { id?: string }) {
 
   const save = async () => {
     if (!service.trim()) { toast('Enter the service to book'); return; }
-    const c = customers.find((x) => x.customer_id === cid) || { customer_id: cid, customer_name: 'Customer', customer_phone: '+91 90000 00000', customer_email: 'customer@mail.in' };
+    const existingCustomer = customers.find((x) => x.customer_id === cid);
+    const c = existingCustomer || (isMockMode()
+      ? { customer_id: cid, customer_name: 'Customer', customer_phone: '+91 90000 00000', customer_email: 'customer@mail.in' }
+      : null);
+    if (!c) { toast('Select an existing customer before booking the appointment'); return; }
     setBusy(true);
     try {
       if (cur) {

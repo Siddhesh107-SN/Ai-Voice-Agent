@@ -71,15 +71,13 @@ export function mapRole(backendRole: string): AppRole {
 }
 
 export function getUserRole(): AppRole | null {
-  if (typeof window === 'undefined') return null;
-  const userStr = localStorage.getItem(STORAGE_KEYS.USER_DATA);
-  if (userStr) {
-    try {
-      const user = JSON.parse(userStr);
-      return mapRole(user.role);
-    } catch {}
-  }
-  return null;
+  if (typeof document === 'undefined') return null;
+  try {
+    localStorage.removeItem(STORAGE_KEYS.USER_DATA);
+  } catch {}
+  const roleCookie = document.cookie.split('; ').find((cookie) => cookie.startsWith('tk_role='));
+  const role = roleCookie?.slice('tk_role='.length);
+  return role === 'admin' || role === 'staff' || role === 'super_admin' ? role : null;
 }
 
 export function setSessionCookies(user: { id?: string | number; role: string; access_status?: string | null }): void {
@@ -97,7 +95,7 @@ export function setSessionCookies(user: { id?: string | number; role: string; ac
 
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(user));
+      localStorage.removeItem(STORAGE_KEYS.USER_DATA);
     } catch {}
   }
 }
