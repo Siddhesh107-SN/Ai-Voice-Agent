@@ -577,3 +577,84 @@ The complete `PUBLIC_ROUTES` set now contains:
    - Mock mode: role switchers and fixture data remain; client admin/staff also see the number block. Fake customer action toasts and billing preview remain mock-only.
 7. Verification: no build, npm, or tests were run as requested. `git diff --check` passed.
 8. Manual checks: in live mode, sign in as each role; confirm no role selector, verify each client’s number/copy/status/more link or unassigned hint, try `?role=super_admin` and confirm it does not change role, and open a platform URL as a client to confirm redirect/denial. Simulate an API failure and confirm the error/retry state appears without fixtures. In mock mode (`NEXT_PUBLIC_API_MODE=mock`), verify the switcher remains usable for each role, client number block appears, and `NEXT_PUBLIC_DASH_SIMULATE` has no effect. No backend behavior or API endpoints were changed. The existing Next.js route guard still relies on the client-readable `tk_role` cookie set after authentication; backend APIs remain authoritative. A server-verified/HttpOnly session would require auth/backend work outside this frontend-only scope.
+## Phase 5 FINALCHECK
+
+### Audit summary
+
+- **Migrations:** Revisions `0001`–`0011` form a single linear chain with `0011`
+  as the static head. `0010` has an unguarded `request_id` column addition;
+  `0011` creates objects without existence guards and automatically nulls
+  later agents with duplicate digit-normalized phone numbers. Downgrades are
+  not uniformly lossless; `0005` conditionally adds columns but its downgrade
+  drops them unconditionally, `0011` removes client tool credentials, and
+  `0008` can fail when public enquiries have a NULL `client_id`.
+- **Configuration:** Backend settings and direct environment reads are
+  documented in `.env.example`; frontend settings are in
+  `ai-calling-frontend/.env.example`. Production startup validates the JWT
+  secret length/prefix and presence of the PIN encryption key, but not every
+  operational setting. `EMAIL_BACKEND=console` does not deliver email.
+- **Public routes:** Public APIs include health, auth entry points, plans,
+  contact, and Sarvam callbacks/tools. Rate limits exist on several routes,
+  but path-token tool callbacks and the shared-token outbound callback have
+  no explicit per-route limit. Contact and callback endpoints can create
+  rows; their caps differ by route.
+- **Tenant isolation:** Authenticated tenant access generally scopes by the
+  token-derived client ID. Public contact enquiries intentionally have
+  `client_id = NULL` and are visible to super-admin message views, not tenant
+  users. Refresh tokens and email-verification records are user-scoped.
+- **Billing:** Plans include 300, 1,000, and 2,500 minutes; minute packs add to
+  the current period, and each completed `Call` is rounded up to whole
+  minutes. Call-start gating uses `OVERAGE_GRACE_PERCENT`, but the gate fails
+  open on selected errors/missing client data and does not reserve concurrent
+  usage. `CallAttempt` is not included in the billed-minute sum.
+- **Sarvam:** Per-client completion callbacks create/update the billed `Call`
+  record and webhook event; admin Monitoring and Webhook events consume these
+  records. Payload fields, identifier stability, response mapping, retry
+  behavior, and provider header support remain assumptions to verify in the
+  Sarvam console. The legacy signed webhook and shared-token outbound route
+  are not disabled by `SARVAM_LEGACY_SHARED_TOKEN_ENABLED=false`. The legacy
+  webhook stores the raw provider payload; review/redact fields before retaining
+  it if the provider can include credentials or unnecessary personal data.
+- **Email/OTP:** The frontend uses database-backed authenticated
+  `/auth/verify-email/*`; root-mounted in-memory `/auth/send-otp` and
+  `/auth/verify-otp` remain legacy flows. Keep the database-backed flow and
+  retire the unused OTP flow after confirming no external clients depend on
+  it. A console backend sends no email, and a missing Resend key prevents
+  delivery.
+- **Frontend/API:** The initial dashboard fetch requests tenant-only business
+  and appointment endpoints even for super-admin, producing a dashboard-load
+  failure. Call list/detail schemas include `started_at` and `duration`, but
+  the frontend adapter omits `started_at`; a weekly chart can use the existing
+  API data after frontend wiring. Forgot-password links to a missing
+  frontend page and the backend does not implement a reset-email flow.
+- **Session/security:** The middleware and server dashboard layout trust
+  editable `tk_role` and `tk_session_user` cookies for UI routing; backend APIs
+  still enforce bearer-token roles. Auth/elevation tokens are stored in
+  localStorage. Gunicorn access paths can contain legacy URL tokens. The
+  super-admin PIN view/reset responses return PINs; replace with a non-
+  disclosure reset/credential workflow.
+- **Repository/security:** Git history contains sensitive-file names
+  (`.env`, `.env.local`, `.vscode/settings.json`, and
+  `ai-calling-frontend/backend/talkaor.db`); contents were not inspected.
+  Rotate any real credentials that may have been committed and remove
+  sensitive history through the repository's approved process. CORS is
+  origin-configured, but production must use exact trusted origins. The
+  development console email backend logs verification codes; keep it out of
+  production and avoid collecting development logs. `APP_ENV=production`
+  does not force `DEBUG=false`; a misconfigured production instance can expose
+  debug tracebacks.
+- **Coverage/dead code:** CI runs backend pytest against PostgreSQL 16 and
+  applies migrations; the frontend gets a production build only, with no
+  frontend test suite. Legacy OTP components/routes, unused `AuthForm.tsx`,
+  root duplicate API mounts, `NEXT_PUBLIC_DASH_SIMULATE` documentation, and
+  the unused landing-page copy merit removal or explicit compatibility
+  decisions. Current frontend has a business/appointment role mismatch.
+
+### Documentation and verification
+
+- Added `docs/DEPLOY_RUNBOOK.md` with process-manager alternatives, production
+  environment placeholders, migration preflight, Sarvam cutover, checks, and
+  rollback cautions.
+- Reworked `README.md` for architecture, local setup, CI coverage, and docs.
+- No application code, tests, migrations, workflows, or dependencies were
+  changed. No tests, database, Docker, npm install, or frontend build were run.
