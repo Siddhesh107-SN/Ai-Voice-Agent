@@ -95,6 +95,10 @@ fallback for legacy tool paths and the `/outbound` callback. Set it to `false`
 only after each client has been moved to per-client credentials and the
 outbound callback no longer needs the shared token.
 
+Both path-token and header-token appointment tool routes are limited to
+60 requests per minute per source IP. The legacy outbound callback is limited
+to 30 per minute, as are the call-start and call-completed callbacks.
+
 ### Access-log handling
 
 The production Gunicorn configuration logs client address, HTTP method,

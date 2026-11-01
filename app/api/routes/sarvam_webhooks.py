@@ -328,6 +328,11 @@ def _require_date_time(body: SarvamAppointmentRequest) -> tuple:
 @limiter.limit("60/minute")
 def check_slot(request: Request, token: str, client_id: int,
                body: SarvamAppointmentRequest, db: DbSession):
+    return _check_slot(request, token, client_id, body, db)
+
+
+def _check_slot(request: Request, token: str, client_id: int,
+                body: SarvamAppointmentRequest, db: Session):
     def operation():
         appointment_date, appointment_time = _require_date_time(body)
         available = AgentRequestService(db, client_id).check_slot(
@@ -346,6 +351,11 @@ def check_slot(request: Request, token: str, client_id: int,
 @limiter.limit("60/minute")
 def book(request: Request, token: str, client_id: int,
          body: SarvamAppointmentRequest, db: DbSession):
+    return _book(request, token, client_id, body, db)
+
+
+def _book(request: Request, token: str, client_id: int,
+          body: SarvamAppointmentRequest, db: Session):
     def operation():
         appointment_date, appointment_time = _require_date_time(body)
         appointment = AgentRequestService(db, client_id).book(
@@ -364,6 +374,11 @@ def book(request: Request, token: str, client_id: int,
 @limiter.limit("60/minute")
 def reschedule(request: Request, token: str, client_id: int,
                body: SarvamAppointmentRequest, db: DbSession):
+    return _reschedule(request, token, client_id, body, db)
+
+
+def _reschedule(request: Request, token: str, client_id: int,
+                body: SarvamAppointmentRequest, db: Session):
     def operation():
         if body.new_date is None or body.new_time is None:
             raise UnprocessableError("new_date and new_time are required",
@@ -386,6 +401,11 @@ def reschedule(request: Request, token: str, client_id: int,
 @limiter.limit("60/minute")
 def cancel(request: Request, token: str, client_id: int,
            body: SarvamAppointmentRequest, db: DbSession):
+    return _cancel(request, token, client_id, body, db)
+
+
+def _cancel(request: Request, token: str, client_id: int,
+            body: SarvamAppointmentRequest, db: Session):
     def operation():
         appointment = AgentRequestService(db, client_id).cancel(
             customer_phone=body.customer_phone, appointment_id=body.appointment_id,
@@ -400,6 +420,7 @@ def cancel(request: Request, token: str, client_id: int,
 
 @router.post("/sarvam/{client_id}/appointments/check-slot",
              response_model=ApiResponse[dict])
+@limiter.limit("60/minute")
 def check_slot_header(
     request: Request,
     client_id: int,
@@ -407,11 +428,12 @@ def check_slot_header(
     db: DbSession,
     token: str = Depends(verify_client_sarvam_header_token),
 ):
-    return check_slot(request, token, client_id, body, db)
+    return _check_slot(request, token, client_id, body, db)
 
 
 @router.post("/sarvam/{client_id}/appointments/book",
              response_model=ApiResponse[AppointmentOut])
+@limiter.limit("60/minute")
 def book_header(
     request: Request,
     client_id: int,
@@ -419,11 +441,12 @@ def book_header(
     db: DbSession,
     token: str = Depends(verify_client_sarvam_header_token),
 ):
-    return book(request, token, client_id, body, db)
+    return _book(request, token, client_id, body, db)
 
 
 @router.post("/sarvam/{client_id}/appointments/reschedule",
              response_model=ApiResponse[AppointmentOut])
+@limiter.limit("60/minute")
 def reschedule_header(
     request: Request,
     client_id: int,
@@ -431,11 +454,12 @@ def reschedule_header(
     db: DbSession,
     token: str = Depends(verify_client_sarvam_header_token),
 ):
-    return reschedule(request, token, client_id, body, db)
+    return _reschedule(request, token, client_id, body, db)
 
 
 @router.post("/sarvam/{client_id}/appointments/cancel",
              response_model=ApiResponse[AppointmentOut])
+@limiter.limit("60/minute")
 def cancel_header(
     request: Request,
     client_id: int,
@@ -443,4 +467,4 @@ def cancel_header(
     db: DbSession,
     token: str = Depends(verify_client_sarvam_header_token),
 ):
-    return cancel(request, token, client_id, body, db)
+    return _cancel(request, token, client_id, body, db)

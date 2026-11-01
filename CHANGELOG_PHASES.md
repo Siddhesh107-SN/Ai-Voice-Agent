@@ -683,6 +683,9 @@ The complete `PUBLIC_ROUTES` set now contains:
   Sarvam `/outbound` callback. Gunicorn access logs omit request paths; direct
   Uvicorn deployments must use `--no-access-log`, and Nginx must be configured
   to omit token-bearing request targets.
+- Path-token and header-token Sarvam appointment routes now share undecorated
+  operation helpers and each apply their own 60/minute limit; this avoids
+  directly calling a SlowAPI-wrapped route handler from the header variant.
 - Super-admin initial loads now fetch platform-only data and skip tenant
   appointment polling. Updated the runbook with secret-rotation guidance and
   clarified the changed `SARVAM_LEGACY_SHARED_TOKEN_ENABLED` behavior.
