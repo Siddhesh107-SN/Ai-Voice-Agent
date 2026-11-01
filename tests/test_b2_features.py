@@ -187,9 +187,10 @@ def test_billing_me_success_and_alerts(client, db):
     resp_pack = client.get("/api/v1/billing/me", headers=auth_headers(token))
     data_pack = resp_pack.json()
     assert data_pack["minutes_limit"] == 1500
-    assert data_pack["minutes_remaining"] == 499
-    assert data_pack["alert"] == "none"  # 1001 / 1500 = 66.73%
+    assert data_pack["minutes_used"] == 1100
     assert data_pack["calls_paused"] is False
+    assert data_pack["minutes_remaining"] == 400
+    assert data_pack["alert"] == "none"  # 1100 / 1500 = 73.3%
 
 
 def test_billing_pause_fields_are_scoped_to_the_signed_in_tenant(client, db):

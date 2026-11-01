@@ -456,16 +456,16 @@ export function BusinessView() {
           </div>
         </div>
       </div>
-      <div className="card" style={{ marginTop: 14 }}>
-        <h3>Staff availability</h3>{!can && <p className="mut" style={{ margin: '4px 0' }}>View only.</p>}
-        <div style={{ overflow: 'auto' }}>
-          <table><thead><tr><th />{DAYS.map((d) => <th key={d}>{d}</th>)}</tr></thead>
-            <tbody>{s.staff.map((m) => (
-              <tr key={m.id}><td><b>{m.name}</b><br /><small className="mut">{m.title}</small></td>
-                {m.days.map((v, j) => <td key={j}><Toggle on={v} disabled={!can} label={`${m.name} ${DAYS[j]}`} onClick={() => set((p) => ({ ...p, staff: p.staff.map((x) => x.id === m.id ? { ...x, days: x.days.map((y, k) => k === j ? !y : y) } : x) }))} /></td>)}</tr>
-            ))}</tbody></table>
+        <div className="card" style={{ marginTop: 14 }}>
+          <h3>Staff availability</h3>{!can && <p className="mut" style={{ margin: '4px 0' }}>View only.</p>}
+          <div style={{ overflow: 'auto' }}>
+            <table><thead><tr><th />{DAYS.map((d) => <th key={d}>{d}</th>)}</tr></thead>
+              <tbody>{s.staff.map((m) => (
+                <tr key={m.id}><td><b>{m.name}</b><br /><small className="mut">{m.title}</small></td>
+                  {m.days.map((v, j) => <td key={j}><Toggle on={v} disabled={!can} label={`${m.name} ${DAYS[j]}`} onClick={() => set((p) => ({ ...p, staff: p.staff.map((x) => x.id === m.id ? { ...x, days: x.days.map((y, k) => k === j ? !y : y) } : x) }))} /></td>)}</tr>
+              ))}</tbody></table>
+          </div>
         </div>
-      </div>
     </>
   );
 }
